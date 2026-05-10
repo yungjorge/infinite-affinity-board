@@ -8,6 +8,7 @@ import { MIN_NOTE_WIDTH, MIN_NOTE_HEIGHT, MAX_NOTE_WIDTH, MAX_NOTE_HEIGHT } from
 interface NoteProps {
   note: NoteItem;
   isSelected: boolean;
+  viewport: ViewportState;
   onUpdate: (updates: Partial<NoteItem>) => void;
   onDelete: () => void;
   onSelect: (multi: boolean) => void;
@@ -15,21 +16,27 @@ interface NoteProps {
   onDragStart: () => void;
   onDragEnd: (x: number, y: number) => void;
   onResize: (width: number, height: number) => void;
-  viewport: ViewportState;
+  onDuplicate: () => void;
+  multiSelected: boolean;
   setIsEditing: (editing: boolean) => void;
+  autoFocus?: boolean;
 }
 
 export function Note({
   note,
   isSelected,
+  viewport,
   onUpdate,
+  onDelete,
   onSelect,
   onBringToFront,
   onDragStart,
   onDragEnd,
   onResize,
-  viewport,
+  onDuplicate,
+  multiSelected,
   setIsEditing,
+  autoFocus,
 }: NoteProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -50,6 +57,15 @@ export function Note({
     setAppeared(true);
   }, []);
 
+  // Auto-focus textarea if this note was just created
+  useEffect(() => {
+    if (autoFocus && textareaRef.current) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+    }
+  }, [autoFocus]);
+
   // Sync local text changes with debounce
   const textTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleTextChange = useCallback(
@@ -59,7 +75,7 @@ export function Note({
       if (textTimeout.current) clearTimeout(textTimeout.current);
       textTimeout.current = setTimeout(() => {
         onUpdate({ text: newText });
-      }, 500);
+      }, 300);
     },
     [onUpdate]
   );
@@ -80,7 +96,6 @@ export function Note({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       const target = e.target as HTMLElement;
-      // Don't start drag from textarea or resize handle
       if (target.tagName === "TEXTAREA" || target.closest(".resize-handle")) {
         return;
       }
@@ -114,33 +129,28 @@ export function Note({
 
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging) {
-        const dx = e.clientX - dragStartPos.current.x;
-        const dy = e.clientY - dragStartPos.current.y;
-        // Convert screen delta to world delta
-        const worldDx = dx / viewport.zoom;
-        const worldDy = dy / viewport.zoom;
-        const newX = noteStartPos.current.x + worldDx;
-        const newY = noteStartPos.current.y + worldDy;
+        const dx = (e.clientX - dragStartPos.current.x) / viewport.zoom;
+        const dy = (e.clientY - dragStartPos.current.y) / viewport.zoom;
 
         if (noteRef.current) {
+          const newX = noteStartPos.current.x + dx;
+          const newY = noteStartPos.current.y + dy;
           noteRef.current.style.left = `${newX}px`;
           noteRef.current.style.top = `${newY}px`;
         }
       }
 
       if (isResizing) {
-        const dx = e.clientX - dragStartPos.current.x;
-        const dy = e.clientY - dragStartPos.current.y;
-        const worldDx = dx / viewport.zoom;
-        const worldDy = dy / viewport.zoom;
+        const dx = (e.clientX - dragStartPos.current.x) / viewport.zoom;
+        const dy = (e.clientY - dragStartPos.current.y) / viewport.zoom;
 
         const newWidth = Math.min(
           MAX_NOTE_WIDTH,
-          Math.max(MIN_NOTE_WIDTH, resizeStart.current.width + worldDx)
+          Math.max(MIN_NOTE_WIDTH, resizeStart.current.width + dx)
         );
         const newHeight = Math.min(
           MAX_NOTE_HEIGHT,
-          Math.max(MIN_NOTE_HEIGHT, resizeStart.current.height + worldDy)
+          Math.max(MIN_NOTE_HEIGHT, resizeStart.current.height + dy)
         );
 
         if (noteRef.current) {
@@ -150,30 +160,29 @@ export function Note({
       }
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = () => {
       if (isDragging) {
-        const dx = e.clientX - dragStartPos.current.x;
-        const dy = e.clientY - dragStartPos.current.y;
-        const worldDx = dx / viewport.zoom;
-        const worldDy = dy / viewport.zoom;
-        onDragEnd(noteStartPos.current.x + worldDx, noteStartPos.current.y + worldDy);
+        if (noteRef.current) {
+          const left = parseFloat(noteRef.current.style.left);
+          const top = parseFloat(noteRef.current.style.top);
+          if (!isNaN(left) && !isNaN(top)) {
+            onDragEnd(left, top);
+          }
+        }
         setIsDragging(false);
       }
 
       if (isResizing) {
-        const dx = e.clientX - dragStartPos.current.x;
-        const dy = e.clientY - dragStartPos.current.y;
-        const worldDx = dx / viewport.zoom;
-        const worldDy = dy / viewport.zoom;
-        const newWidth = Math.min(
-          MAX_NOTE_WIDTH,
-          Math.max(MIN_NOTE_WIDTH, resizeStart.current.width + worldDx)
-        );
-        const newHeight = Math.min(
-          MAX_NOTE_HEIGHT,
-          Math.max(MIN_NOTE_HEIGHT, resizeStart.current.height + worldDy)
-        );
-        onResize(newWidth, newHeight);
+        if (noteRef.current) {
+          const newW = parseFloat(noteRef.current.style.width);
+          const newH = parseFloat(noteRef.current.style.height);
+          if (!isNaN(newW) && !isNaN(newH)) {
+            onResize(
+              Math.min(MAX_NOTE_WIDTH, Math.max(MIN_NOTE_WIDTH, newW)),
+              Math.min(MAX_NOTE_HEIGHT, Math.max(MIN_NOTE_HEIGHT, newH))
+            );
+          }
+        }
         setIsResizing(false);
       }
     };
@@ -184,7 +193,7 @@ export function Note({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, isResizing, viewport.zoom, onDragEnd, onResize]);
+  }, [isDragging, isResizing, viewport.zoom, onDragEnd, onResize, note.x, note.y, note.id, multiSelected]);
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -202,12 +211,41 @@ export function Note({
 
   const handleTextareaBlur = useCallback(() => {
     setIsEditing(false);
-    // Flush text
     if (textTimeout.current) {
       clearTimeout(textTimeout.current);
       onUpdate({ text: localText });
     }
   }, [setIsEditing, onUpdate, localText]);
+
+  // Context menu
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const items: { label: string; action: () => void }[] = [
+        {
+          label: `Delete`,
+          action: onDelete,
+        },
+        {
+          label: `Duplicate`,
+          action: onDuplicate,
+        },
+      ];
+
+      // Build a simple menu string
+      const menuText = items.map((item, i) => `${i + 1}. ${item.label}`).join("\n");
+      const choice = window.prompt(`Note actions:\n\n${menuText}\n\nEnter number:`, "");
+      if (choice) {
+        const idx = parseInt(choice, 10) - 1;
+        if (idx >= 0 && idx < items.length) {
+          items[idx].action();
+        }
+      }
+    },
+    [onDelete, onDuplicate]
+  );
 
   const colorClass = `note-${note.color}`;
 
@@ -226,6 +264,7 @@ export function Note({
       }}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
+      onContextMenu={handleContextMenu}
       onClick={(e) => e.stopPropagation()}
     >
       <textarea
@@ -234,9 +273,8 @@ export function Note({
         onChange={handleTextChange}
         onFocus={handleTextareaFocus}
         onBlur={handleTextareaBlur}
-        className="w-full h-full bg-transparent border-none outline-none resize-none text-inherit font-sans text-sm leading-relaxed p-0 overflow-y-auto"
+        className="note-textarea"
         placeholder="Type here..."
-        style={{ color: "#333", cursor: "text" }}
       />
       <div
         className="resize-handle"

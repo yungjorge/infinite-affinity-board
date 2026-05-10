@@ -32,19 +32,23 @@ export interface BoardAPI {
   selectedNoteIds: string[];
   selectedGroupIds: string[];
 
-  addNote: (defaultColor?: NoteColor) => NoteItem;
+  addNote: (defaultColor?: NoteColor, focus?: boolean) => NoteItem;
   updateNote: (id: string, updates: Partial<NoteItem>) => void;
   deleteNote: (id: string) => void;
   moveNote: (id: string, x: number, y: number) => void;
+  moveNotes: (deltas: Map<string, { x: number; y: number }>) => void;
   resizeNote: (id: string, width: number, height: number) => void;
   changeNoteColor: (id: string, color: NoteColor) => void;
   bringToFront: (id: string) => void;
+  duplicateNote: (id: string) => NoteItem | null;
+  duplicateSelected: () => NoteItem[];
 
   addGroup: (noteIds: string[]) => GroupItem;
   updateGroup: (id: string, updates: Partial<GroupItem>) => void;
   deleteGroup: (id: string) => void;
   renameGroup: (id: string, title: string) => void;
   ungroupNotes: (groupId: string) => void;
+  moveGroupWithNotes: (id: string, dx: number, dy: number) => void;
 
   setViewport: (vp: ViewportState) => void;
   setSettings: (settings: Partial<BoardSettings>) => void;
@@ -101,7 +105,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
       saveDebounceRef.current = setTimeout(() => {
         saveBoard(newBoard);
-      }, 1000);
+      }, 500);
     },
     []
   );
@@ -113,6 +117,8 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       }
     };
   }, [board]);
+
+  // ── Note CRUD ──────────────────────────────────────────
 
   const addNote = useCallback(
     (defaultColor: NoteColor = "yellow"): NoteItem => {
@@ -145,6 +151,9 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       };
       pushHistory(board);
       persistState(newBoard);
+      // Auto-select the new note
+      setSelectedNoteIds([note.id]);
+      setSelectedGroupIds([]);
       return note;
     },
     [board, lastZIndex, persistState, pushHistory, containerSize]
@@ -159,10 +168,17 @@ export function useBoard(containerSize?: { width: number; height: number }) {
         ),
         updatedAt: Date.now(),
       };
-      pushHistory(board);
       persistState(newBoard);
     },
-    [board, persistState, pushHistory]
+    [board, persistState]
+  );
+
+  const updateNoteWithHistory = useCallback(
+    (id: string, updates: Partial<NoteItem>) => {
+      pushHistory(board);
+      updateNote(id, updates);
+    },
+    [board, updateNote, pushHistory]
   );
 
   const deleteNote = useCallback(
@@ -191,6 +207,24 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     [board, persistState]
   );
 
+  // Move multiple notes at once (for multi-select drag)
+  const moveNotes = useCallback(
+    (deltas: Map<string, { x: number; y: number }>) => {
+      if (deltas.size === 0) return;
+      const newBoard = {
+        ...board,
+        notes: board.notes.map((n) => {
+          const delta = deltas.get(n.id);
+          if (!delta) return n;
+          return { ...n, x: delta.x, y: delta.y, updatedAt: Date.now() };
+        }),
+        updatedAt: Date.now(),
+      };
+      persistState(newBoard);
+    },
+    [board, persistState]
+  );
+
   const resizeNote = useCallback(
     (id: string, width: number, height: number) => {
       const newBoard = {
@@ -207,9 +241,9 @@ export function useBoard(containerSize?: { width: number; height: number }) {
 
   const changeNoteColor = useCallback(
     (id: string, color: NoteColor) => {
-      updateNote(id, { color });
+      updateNoteWithHistory(id, { color });
     },
-    [updateNote]
+    [updateNoteWithHistory]
   );
 
   const bringToFront = useCallback(
@@ -227,6 +261,77 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     },
     [board, lastZIndex, persistState]
   );
+
+  // ── Duplicate ──────────────────────────────────────────
+
+  const duplicateNote = useCallback(
+    (id: string): NoteItem | null => {
+      const note = board.notes.find((n) => n.id === id);
+      if (!note) return null;
+
+      const newZ = lastZIndex + 1;
+      setLastZIndex(newZ);
+      const now = Date.now();
+      const dup: NoteItem = {
+        ...note,
+        id: generateId(),
+        x: note.x + 20,
+        y: note.y + 20,
+        zIndex: newZ,
+        groupId: undefined,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const newBoard = {
+        ...board,
+        notes: [...board.notes, dup],
+        updatedAt: now,
+      };
+      pushHistory(board);
+      persistState(newBoard);
+      setSelectedNoteIds([dup.id]);
+      setSelectedGroupIds([]);
+      return dup;
+    },
+    [board, lastZIndex, persistState, pushHistory]
+  );
+
+  const duplicateSelected = useCallback((): NoteItem[] => {
+    const dupes: NoteItem[] = [];
+    let newZ = lastZIndex;
+    let newBoard = { ...board };
+    const now = Date.now();
+
+    for (const id of selectedNoteIds) {
+      const note = board.notes.find((n) => n.id === id);
+      if (!note) continue;
+      newZ++;
+      const dup: NoteItem = {
+        ...note,
+        id: generateId(),
+        x: note.x + 20,
+        y: note.y + 20,
+        zIndex: newZ,
+        groupId: undefined,
+        createdAt: now,
+        updatedAt: now,
+      };
+      dupes.push(dup);
+      newBoard = { ...newBoard, notes: [...newBoard.notes, dup] };
+    }
+
+    if (dupes.length === 0) return [];
+    setLastZIndex(newZ);
+    newBoard.updatedAt = now;
+    pushHistory(board);
+    persistState(newBoard);
+    setSelectedNoteIds(dupes.map((d) => d.id));
+    setSelectedGroupIds([]);
+    return dupes;
+  }, [board, selectedNoteIds, lastZIndex, persistState, pushHistory]);
+
+  // ── Group CRUD ─────────────────────────────────────────
 
   const addGroup = useCallback(
     (noteIds: string[]): GroupItem => {
@@ -264,6 +369,8 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       };
       pushHistory(board);
       persistState(newBoard);
+      setSelectedGroupIds([group.id]);
+      setSelectedNoteIds([]);
       return group;
     },
     [board, lastZIndex, persistState, pushHistory]
@@ -325,6 +432,32 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     },
     [board, persistState, pushHistory]
   );
+
+  // Move a group AND all its notes together (drag group frame)
+  const moveGroupWithNotes = useCallback(
+    (id: string, dx: number, dy: number) => {
+      const group = board.groups.find((g) => g.id === id);
+      if (!group) return;
+      const newBoard = {
+        ...board,
+        groups: board.groups.map((g) =>
+          g.id === id
+            ? { ...g, x: g.x + dx, y: g.y + dy, updatedAt: Date.now() }
+            : g
+        ),
+        notes: board.notes.map((n) =>
+          n.groupId === id
+            ? { ...n, x: n.x + dx, y: n.y + dy, updatedAt: Date.now() }
+            : n
+        ),
+        updatedAt: Date.now(),
+      };
+      persistState(newBoard);
+    },
+    [board, persistState]
+  );
+
+  // ── Selection ──────────────────────────────────────────
 
   const selectNote = useCallback((id: string, multi = false) => {
     if (multi) {
@@ -390,6 +523,8 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     setSelectedGroupIds([]);
   }, [board, selectedNoteIds, selectedGroupIds, persistState, pushHistory]);
 
+  // ── Viewport & Settings ────────────────────────────────
+
   const setViewport = useCallback(
     (vp: ViewportState) => {
       const newBoard = { ...board, viewport: vp, updatedAt: Date.now() };
@@ -410,6 +545,8 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     [board, persistState]
   );
 
+  // ── Import / Export / Share ────────────────────────────
+
   const exportBoard = useCallback(() => {
     return JSON.stringify(board, null, 2);
   }, [board]);
@@ -429,6 +566,8 @@ export function useBoard(containerSize?: { width: number; height: number }) {
         };
         pushHistory(board);
         persistState(newBoard);
+        setSelectedNoteIds([]);
+        setSelectedGroupIds([]);
         return true;
       } catch {
         return false;
@@ -445,9 +584,11 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     return `/board/${hash}`;
   }, [board]);
 
+  // ── Undo / Redo ────────────────────────────────────────
+
   const undo = useCallback(() => {
     if (undoStack.current.length < 2) return;
-    const current = undoStack.current.pop()!;
+    undoStack.current.pop();
     redoStack.current.push(JSON.parse(JSON.stringify(board)));
     const previous = undoStack.current[undoStack.current.length - 1];
     setBoard(previous);
@@ -475,17 +616,21 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     selectedNoteIds,
     selectedGroupIds,
     addNote,
-    updateNote,
+    updateNote: updateNoteWithHistory,
     deleteNote,
     moveNote,
+    moveNotes,
     resizeNote,
     changeNoteColor,
     bringToFront,
+    duplicateNote,
+    duplicateSelected,
     addGroup,
     updateGroup,
     deleteGroup,
     renameGroup,
     ungroupNotes,
+    moveGroupWithNotes,
     setViewport,
     setSettings,
     selectNote,

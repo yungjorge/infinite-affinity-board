@@ -1,17 +1,19 @@
 "use client";
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { GroupItem, NoteItem } from "@/lib/boardTypes";
+import { GroupItem, NoteItem, ViewportState } from "@/lib/boardTypes";
 
 interface GroupProps {
   group: GroupItem;
   notes: NoteItem[];
   isSelected: boolean;
+  viewport: ViewportState;
   onSelect: (multi: boolean) => void;
   onUpdate: (updates: Partial<GroupItem>) => void;
   onDelete: () => void;
   onRename: (title: string) => void;
   onUngroup: () => void;
+  onMoveGroupWithNotes: (dx: number, dy: number) => void;
   setIsEditing: (editing: boolean) => void;
 }
 
@@ -19,11 +21,13 @@ export function Group({
   group,
   notes,
   isSelected,
+  viewport,
   onSelect,
   onUpdate,
   onDelete,
   onRename,
   onUngroup,
+  onMoveGroupWithNotes,
   setIsEditing,
 }: GroupProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -64,7 +68,7 @@ export function Group({
     }
   }, [notes, group.x, group.y, group.width, group.height, onUpdate]);
 
-  // Drag handling
+  // Drag handling - zoom-correct
   const handleDragStart = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -81,10 +85,8 @@ export function Group({
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const dx = e.clientX - dragStartPos.current.x;
-      const dy = e.clientY - dragStartPos.current.y;
-      // We don't have viewport zoom here, so we work in screen coords
-      // The caller should handle this... let's use a simple approach
+      const dx = (e.clientX - dragStartPos.current.x) / viewport.zoom;
+      const dy = (e.clientY - dragStartPos.current.y) / viewport.zoom;
       if (groupRef.current) {
         const newX = groupStartPos.current.x + dx;
         const newY = groupStartPos.current.y + dy;
@@ -94,11 +96,9 @@ export function Group({
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-      const dx = e.clientX - dragStartPos.current.x;
-      const dy = e.clientY - dragStartPos.current.y;
-      const newX = groupStartPos.current.x + dx;
-      const newY = groupStartPos.current.y + dy;
-      onUpdate({ x: newX, y: newY });
+      const dx = (e.clientX - dragStartPos.current.x) / viewport.zoom;
+      const dy = (e.clientY - dragStartPos.current.y) / viewport.zoom;
+      onMoveGroupWithNotes(dx, dy);
       setIsDragging(false);
     };
 
@@ -108,7 +108,7 @@ export function Group({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, onUpdate]);
+  }, [isDragging, viewport.zoom, onMoveGroupWithNotes]);
 
   const handleTitleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -135,15 +135,24 @@ export function Group({
   const handleTitleBlur = useCallback(() => {
     setIsEditingTitle(false);
     setIsEditing(false);
-    onRename(localTitle);
-  }, [localTitle, onRename, setIsEditing]);
+    if (localTitle.trim() && localTitle !== group.title) {
+      onRename(localTitle.trim());
+    } else {
+      setLocalTitle(group.title);
+    }
+  }, [localTitle, group.title, onRename, setIsEditing]);
 
   const handleTitleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter") {
+        e.preventDefault();
         setIsEditingTitle(false);
         setIsEditing(false);
-        onRename(localTitle);
+        if (localTitle.trim()) {
+          onRename(localTitle.trim());
+        } else {
+          setLocalTitle(group.title);
+        }
       }
       if (e.key === "Escape") {
         setLocalTitle(group.title);
@@ -152,6 +161,29 @@ export function Group({
       }
     },
     [localTitle, group.title, onRename, setIsEditing]
+  );
+
+  // Context menu
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Show a simple native-like action via prompt
+      const action = window.prompt(
+        `Group: ${group.title}\n\nType: rename, delete, ungroup, or cancel`,
+        ""
+      );
+      if (action === "rename") {
+        setIsEditingTitle(true);
+        setIsEditing(true);
+        setTimeout(() => titleInputRef.current?.focus(), 0);
+      } else if (action === "delete") {
+        onDelete();
+      } else if (action === "ungroup") {
+        onUngroup();
+      }
+    },
+    [group.title, onDelete, onUngroup, setIsEditing]
   );
 
   const themeClass = `group-frame-${group.theme}`;
@@ -169,6 +201,7 @@ export function Group({
         zIndex: group.zIndex,
         minHeight: "80px",
       }}
+      onContextMenu={handleContextMenu}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Title bar */}
@@ -184,19 +217,19 @@ export function Group({
             onChange={handleTitleChange}
             onBlur={handleTitleBlur}
             onKeyDown={handleTitleKeyDown}
-            style={{ color: "inherit" }}
+            style={{ color: "inherit", width: "120px" }}
           />
         ) : (
           <span
-            style={{ cursor: "text" }}
+            style={{ cursor: "text", userSelect: "none" }}
             onClick={handleTitleClick}
           >
             {group.title}
           </span>
         )}
-        <div style={{ display: "flex", gap: "4px" }}>
-          <span style={{ fontSize: "10px", opacity: 0.5 }}>
-            {group.theme}
+        <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+          <span style={{ fontSize: "10px", opacity: 0.6, userSelect: "none" }}>
+            {notes.length} notes
           </span>
           <button
             className="group-btn"

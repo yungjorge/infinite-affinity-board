@@ -7,6 +7,16 @@ import { ThemeToggle } from "./ThemeToggle";
 import { ZOOM_STEP } from "@/lib/constants";
 import { clampZoom } from "@/lib/geometry";
 
+const MAX_SHARE_SIZE = 8000; // characters, roughly
+
+function fireToast(message: string, type: "success" | "error" | "info" = "info") {
+  window.dispatchEvent(
+    new CustomEvent("toast", {
+      detail: { message, type },
+    })
+  );
+}
+
 export function Toolbar() {
   const { boardAPI, canvasAPI, defaultColor, setDefaultColor } = useBoardContext();
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -24,8 +34,9 @@ export function Toolbar() {
     if (boardAPI.selectedNoteIds.length >= 2) {
       try {
         boardAPI.addGroup(boardAPI.selectedNoteIds);
+        fireToast("Notes grouped", "success");
       } catch {
-        // ignore
+        fireToast("Could not create group", "error");
       }
     }
   }, [boardAPI]);
@@ -33,6 +44,7 @@ export function Toolbar() {
   const handleUngroup = useCallback(() => {
     if (boardAPI.selectedGroupIds.length > 0) {
       boardAPI.selectedGroupIds.forEach((id) => boardAPI.ungroupNotes(id));
+      fireToast("Group ungrouped", "info");
     }
   }, [boardAPI]);
 
@@ -75,6 +87,7 @@ export function Toolbar() {
     a.download = `affinity-board-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    fireToast("Board exported as JSON", "success");
   }, [boardAPI]);
 
   const handleImport = useCallback(() => {
@@ -89,36 +102,56 @@ export function Toolbar() {
       reader.onload = (ev) => {
         const text = ev.target?.result;
         if (typeof text === "string") {
-          boardAPI.importBoard(text);
-          // Toast handled by event system
+          const ok = boardAPI.importBoard(text);
+          if (ok) {
+            fireToast("Board imported successfully", "success");
+          } else {
+            fireToast("Invalid board file — check the JSON format", "error");
+          }
         }
       };
+      reader.onerror = () => {
+        fireToast("Could not read file", "error");
+      };
       reader.readAsText(file);
-      // Reset input
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
     [boardAPI]
   );
 
   const handleShare = useCallback(async () => {
+    const json = boardAPI.exportBoard();
+    if (json.length > MAX_SHARE_SIZE) {
+      fireToast(
+        "Board is too large for URL sharing — use JSON export instead",
+        "error"
+      );
+      return;
+    }
+
     const url = boardAPI.getShareUrl();
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(url);
-        window.dispatchEvent(
-          new CustomEvent("toast", {
-            detail: { message: "Share link copied to clipboard!", type: "success" },
-          })
-        );
+        fireToast("Share link copied to clipboard", "success");
       } catch {
-        // fallback
+        fireToast("Could not copy to clipboard — copy the URL manually", "error");
       }
     }
   }, [boardAPI]);
 
+  const handleResetView = useCallback(() => {
+    canvasAPI.setViewport({ x: 0, y: 0, zoom: 1 });
+    fireToast("View reset", "info");
+  }, [canvasAPI]);
+
   const hasSelection =
     boardAPI.selectedNoteIds.length > 0 || boardAPI.selectedGroupIds.length > 0;
   const canUngroup = boardAPI.selectedGroupIds.length > 0;
+  const noteCount = boardAPI.board.notes.length;
+  const groupCount = boardAPI.board.groups.length;
+
+  const zoomPct = Math.round(canvasAPI.viewport.zoom * 100);
 
   return (
     <>
@@ -126,18 +159,10 @@ export function Toolbar() {
         <span className="toolbar-label">Affinity</span>
         <div className="toolbar-separator" />
 
-        {/* Hand tool (pan) */}
+        {/* Pan indicator */}
         <button className="toolbar-btn" title="Pan (Space+drag)" aria-label="Pan tool">
           <span className="tooltip">Pan (Space+drag)</span>
           ✋
-        </button>
-
-        {/* Select tool */}
-        <button className="toolbar-btn" title="Select (V)" aria-label="Select tool">
-          <span className="tooltip">Select (V)</span>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M1 1l5 14 2-5 5-2z" />
-          </svg>
         </button>
 
         {/* Add note */}
@@ -167,7 +192,6 @@ export function Toolbar() {
                 width: 16,
                 height: 16,
                 borderRadius: "9999px",
-                background: `var(--color-${defaultColor})`,
                 backgroundColor: {
                   yellow: "#FFF9C4",
                   pink: "#F8BBD0",
@@ -257,14 +281,17 @@ export function Toolbar() {
 
         {/* Zoom percentage */}
         <button
-          className="toolbar-btn"
-          title="Reset Zoom"
+          className="toolbar-btn toolbar-zoom-btn"
+          title="Reset Zoom (click) / Reset View (right-click)"
           aria-label="Reset zoom to 100%"
           onClick={handleResetZoom}
-          style={{ fontSize: "11px", width: "auto", padding: "0 8px", minWidth: "40px" }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            handleResetView();
+          }}
         >
-          <span className="tooltip">Reset Zoom</span>
-          {Math.round(canvasAPI.viewport.zoom * 100)}%
+          <span className="tooltip">Reset Zoom (click) | Reset View (right-click)</span>
+          {zoomPct}%
         </button>
 
         {/* Zoom in */}
@@ -302,7 +329,7 @@ export function Toolbar() {
           aria-label="Toggle grid"
           onClick={handleToggleGrid}
           style={{
-            opacity: boardAPI.board.settings.gridEnabled ? 1 : 0.5,
+            opacity: boardAPI.board.settings.gridEnabled ? 1 : 0.45,
           }}
         >
           <span className="tooltip">Toggle Grid</span>
@@ -359,6 +386,16 @@ export function Toolbar() {
             <path d="M11 2a2 2 0 00-1.57 3.28L6.35 7.32a2 2 0 100 1.36l3.08 2.04A2 2 0 1011 10a1.99 1.99 0 00-.37-1.13L7.51 6.83a2 2 0 000-1.66l3.12-2.04A2 2 0 0011 2z" />
           </svg>
         </button>
+
+        <div className="toolbar-separator" />
+
+        {/* Board stats */}
+        {(noteCount > 0 || groupCount > 0) && (
+          <span className="toolbar-stats">
+            {noteCount} note{noteCount !== 1 ? "s" : ""}
+            {groupCount > 0 && ` · ${groupCount} group${groupCount !== 1 ? "s" : ""}`}
+          </span>
+        )}
 
         <div className="toolbar-separator" />
 

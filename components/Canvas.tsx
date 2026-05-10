@@ -43,8 +43,7 @@ export function Canvas() {
   const spaceHeldRef = useRef(false);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [defaultColor, setDefaultColor] = useState<NoteColor>("yellow");
-  // Toast container handles its own useToast hook
-  void 0; // ensure useToast is imported
+  const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null);
 
   // Track container size
   useEffect(() => {
@@ -86,7 +85,6 @@ export function Canvas() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") {
-        // Don't capture if editing
         const target = e.target as HTMLElement;
         if (
           target.tagName === "INPUT" ||
@@ -139,6 +137,21 @@ export function Canvas() {
     [canvasAPI, boardAPI]
   );
 
+  // Double-click empty canvas to add a note
+  const onCanvasDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target !== e.currentTarget && (e.target as HTMLElement).closest(".note-card, .group-frame")) {
+        return;
+      }
+      const world = canvasAPI.screenToWorld(e.clientX, e.clientY);
+      boardAPI.clearSelection();
+      const note = boardAPI.addNote(defaultColor);
+      boardAPI.moveNote(note.id, world.x - 100, world.y - 100);
+      setFocusedNoteId(note.id);
+    },
+    [canvasAPI, boardAPI, defaultColor]
+  );
+
   // Determine cursor class
   const cursorClass = canvasAPI.isPanning ? "canvas-panning" : spaceHeldRef.current ? "canvas-grab" : "";
 
@@ -153,6 +166,32 @@ export function Canvas() {
   const getGroupNotes = (group: GroupItem) =>
     board.notes.filter((n) => group.noteIds.includes(n.id));
 
+  // Multi-drag: when one selected note finishes dragging, move all others by same delta
+  const handleNoteDragEnd = useCallback(
+    (noteId: string, newX: number, newY: number) => {
+      if (boardAPI.selectedNoteIds.length > 1) {
+        // Find the dragged note to calculate delta
+        const draggedNote = board.notes.find((n) => n.id === noteId);
+        if (draggedNote) {
+          const dx = newX - draggedNote.x;
+          const dy = newY - draggedNote.y;
+          const deltas = new Map<string, { x: number; y: number }>();
+          for (const id of boardAPI.selectedNoteIds) {
+            const n = board.notes.find((nn) => nn.id === id);
+            if (n) {
+              deltas.set(id, { x: n.x + dx, y: n.y + dy });
+            }
+          }
+          boardAPI.moveNotes(deltas);
+          return;
+        }
+      }
+      // Single note move
+      boardAPI.moveNote(noteId, newX, newY);
+    },
+    [boardAPI, board.notes]
+  );
+
   return (
     <BoardContext.Provider
       value={{
@@ -165,7 +204,7 @@ export function Canvas() {
         setDefaultColor,
       }}
     >
-      <div className="relative w-full h-full">
+      <div className="relative w-full h-full select-none">
         <Toolbar />
         <div
           ref={containerRef}
@@ -173,12 +212,14 @@ export function Canvas() {
           onMouseDown={onCanvasMouseDown}
           onMouseMove={onCanvasMouseMove}
           onMouseUp={onCanvasMouseUp}
+          onDoubleClick={onCanvasDoubleClick}
           onWheel={canvasAPI.handleWheel}
           onContextMenu={(e) => e.preventDefault()}
+          style={{ touchAction: "none" }}
         >
           {/* Transformed canvas content */}
           <div
-            className="absolute"
+            className="absolute canvas-content"
             style={{
               transform: `translate(${canvasAPI.viewport.x}px, ${canvasAPI.viewport.y}px) scale(${canvasAPI.viewport.zoom})`,
               transformOrigin: "0 0",
@@ -193,11 +234,13 @@ export function Canvas() {
                 group={group}
                 notes={getGroupNotes(group)}
                 isSelected={boardAPI.selectedGroupIds.includes(group.id)}
+                viewport={canvasAPI.viewport}
                 onSelect={(multi) => boardAPI.selectGroup(group.id, multi)}
                 onUpdate={(updates) => boardAPI.updateGroup(group.id, updates)}
                 onDelete={() => boardAPI.deleteGroup(group.id)}
                 onRename={(title) => boardAPI.renameGroup(group.id, title)}
                 onUngroup={() => boardAPI.ungroupNotes(group.id)}
+                onMoveGroupWithNotes={(dx, dy) => boardAPI.moveGroupWithNotes(group.id, dx, dy)}
                 setIsEditing={keyboardShortcuts.setIsEditing}
               />
             ))}
@@ -208,6 +251,11 @@ export function Canvas() {
                 key={note.id}
                 note={note}
                 isSelected={boardAPI.selectedNoteIds.includes(note.id)}
+                multiSelected={
+                  boardAPI.selectedNoteIds.length > 1 &&
+                  boardAPI.selectedNoteIds.includes(note.id)
+                }
+                viewport={canvasAPI.viewport}
                 onUpdate={(updates) => boardAPI.updateNote(note.id, updates)}
                 onDelete={() => boardAPI.deleteNote(note.id)}
                 onSelect={(multi) => boardAPI.selectNote(note.id, multi)}
@@ -215,12 +263,11 @@ export function Canvas() {
                 onDragStart={() => {
                   boardAPI.bringToFront(note.id);
                 }}
-                onDragEnd={(x, y) => {
-                  boardAPI.moveNote(note.id, x, y);
-                }}
+                onDragEnd={(x, y) => handleNoteDragEnd(note.id, x, y)}
                 onResize={(w, h) => boardAPI.resizeNote(note.id, w, h)}
-                viewport={canvasAPI.viewport}
+                onDuplicate={() => boardAPI.duplicateNote(note.id)}
                 setIsEditing={keyboardShortcuts.setIsEditing}
+                autoFocus={focusedNoteId === note.id}
               />
             ))}
 
@@ -234,12 +281,13 @@ export function Canvas() {
               <div
                 className="empty-state"
                 style={{
-                  left: canvasAPI.viewport.x + containerSize.width / 2 / canvasAPI.viewport.zoom,
-                  top: canvasAPI.viewport.y + containerSize.height / 2 / canvasAPI.viewport.zoom,
+                  transform: `translate(${-canvasAPI.viewport.x / canvasAPI.viewport.zoom}px, ${-canvasAPI.viewport.y / canvasAPI.viewport.zoom}px)`,
                 }}
               >
-                <h2>Click anywhere or press <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs font-mono">N</kbd> to add your first note</h2>
-                <p>Drag to move around. Scroll to zoom.</p>
+                <div className="empty-state-content">
+                  <h2>Click anywhere or press <kbd className="kbd">N</kbd> to add your first note</h2>
+                  <p>Use <kbd className="kbd">Space</kbd> + drag to pan. Scroll to zoom.</p>
+                </div>
               </div>
             )}
           </div>

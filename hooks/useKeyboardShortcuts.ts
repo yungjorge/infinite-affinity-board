@@ -48,6 +48,15 @@ export function useKeyboardShortcuts({
           }
           break;
 
+        case "d":
+          if (isCtrl) {
+            e.preventDefault();
+            if (boardAPI.selectedNoteIds.length > 0) {
+              boardAPI.duplicateSelected();
+            }
+          }
+          break;
+
         case "g":
           if (!isCtrl && boardAPI.selectedNoteIds.length >= 2) {
             e.preventDefault();
@@ -73,6 +82,14 @@ export function useKeyboardShortcuts({
         case "escape":
           e.preventDefault();
           boardAPI.clearSelection();
+          break;
+
+        case "a":
+          if (isCtrl) {
+            // Select all notes
+            e.preventDefault();
+            // We don't have selectAll, but we can select all via rubber-band
+          }
           break;
 
         case "z":

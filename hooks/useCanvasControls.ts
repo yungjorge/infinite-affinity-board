@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback } from "react";
 import { ViewportState } from "@/lib/boardTypes";
 import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP, DEFAULT_ZOOM } from "@/lib/constants";
 import {
@@ -20,7 +20,7 @@ export interface CanvasControlsAPI {
   isPanning: boolean;
   handleCanvasMouseDown: (e: React.MouseEvent, spaceHeld: boolean) => void;
   handleCanvasMouseMove: (e: React.MouseEvent) => void;
-  handleCanvasMouseUp: () => { selectedIds: string[] } | null;
+  handleCanvasMouseUp: () => void;
   handleWheel: (e: React.WheelEvent) => void;
   selectionRect: { x: number; y: number; width: number; height: number } | null;
 }
@@ -81,7 +81,8 @@ export function useCanvasControls(
       const dx = e.clientX - dragStart.current.x;
       const dy = e.clientY - dragStart.current.y;
 
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      // Only start "dragging" after a 3px threshold
+      if (!isDragging.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
         isDragging.current = true;
       }
 
@@ -95,11 +96,13 @@ export function useCanvasControls(
         });
         setIsPanning(true);
       } else if (actionRef.current === "selecting") {
-        const start = stw(dragStart.current.x, dragStart.current.y, {
+        // Convert screen positions to world coordinates using the viewport at drag start
+        const startViewport = {
           ...viewport,
           x: viewportStart.current.x,
           y: viewportStart.current.y,
-        });
+        };
+        const start = stw(dragStart.current.x, dragStart.current.y, startViewport);
         const current = stw(e.clientX, e.clientY, viewport);
         const rect = getSelectionRect(start, current);
         setSelectionRect(rect);
@@ -108,17 +111,12 @@ export function useCanvasControls(
     [viewport, setViewport]
   );
 
-  const handleCanvasMouseUp = useCallback((): { selectedIds: string[] } | null => {
-    if (actionRef.current === "selecting" && selectionRect) {
-      actionRef.current = "none";
-      setSelectionRect(null);
-      return null;
-    }
+  const handleCanvasMouseUp = useCallback(() => {
     actionRef.current = "none";
     setIsPanning(false);
     setSelectionRect(null);
-    return null;
-  }, [selectionRect]);
+    isDragging.current = false;
+  }, []);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -126,6 +124,7 @@ export function useCanvasControls(
       const delta = e.deltaY > 0 ? -1 : 1;
       const newZoom = clampZoom(viewport.zoom * (1 + delta * ZOOM_STEP));
 
+      // Zoom toward cursor position
       const mouseWorld = stw(e.clientX, e.clientY, viewport);
       setViewport({
         zoom: newZoom,
@@ -138,7 +137,6 @@ export function useCanvasControls(
 
   const fitAll = useCallback(
     (board: BoardState, containerWidth: number, containerHeight: number) => {
-      // Build a temporary list of all items as notes for bounds calculation
       const allItems = [...board.notes];
       for (const group of board.groups) {
         allItems.push({
@@ -160,41 +158,29 @@ export function useCanvasControls(
         return;
       }
 
-      const { getBoundsForNotes, fitBoundsToViewport } = {
-        getBoundsForNotes: (items: typeof allItems) => {
-          if (items.length === 0) return null;
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          for (const item of items) {
-            if (item.x < minX) minX = item.x;
-            if (item.y < minY) minY = item.y;
-            if (item.x + item.width > maxX) maxX = item.x + item.width;
-            if (item.y + item.height > maxY) maxY = item.y + item.height;
-          }
-          return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-        },
-        fitBoundsToViewport: (
-          bounds: { x: number; y: number; width: number; height: number },
-          cw: number,
-          ch: number,
-          p: number
-        ) => {
-          const bw = bounds.width + p * 2;
-          const bh = bounds.height + p * 2;
-          const sx = cw / bw;
-          const sy = ch / bh;
-          const z = Math.min(sx, sy, 2);
-          const cx = bounds.x + bounds.width / 2;
-          const cy = bounds.y + bounds.height / 2;
-          return { x: cw / 2 - cx * z, y: ch / 2 - cy * z, zoom: z };
-        },
-      };
-      const bounds = getBoundsForNotes(allItems);
-      if (!bounds) {
-        setViewport({ x: 0, y: 0, zoom: DEFAULT_ZOOM });
-        return;
+      // Compute bounds
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const item of allItems) {
+        if (item.x < minX) minX = item.x;
+        if (item.y < minY) minY = item.y;
+        if (item.x + item.width > maxX) maxX = item.x + item.width;
+        if (item.y + item.height > maxY) maxY = item.y + item.height;
       }
-      const fit = fitBoundsToViewport(bounds, containerWidth, containerHeight, 80);
-      setViewport(fit);
+
+      const padding = 100;
+      const bw = (maxX - minX) + padding * 2;
+      const bh = (maxY - minY) + padding * 2;
+      const sx = containerWidth / bw;
+      const sy = containerHeight / bh;
+      const z = Math.min(sx, sy, 2);
+      const cx = minX + (maxX - minX) / 2;
+      const cy = minY + (maxY - minY) / 2;
+
+      setViewport({
+        x: containerWidth / 2 - cx * z,
+        y: containerHeight / 2 - cy * z,
+        zoom: z,
+      });
     },
     [setViewport]
   );
