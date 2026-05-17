@@ -23,11 +23,11 @@
 }
 
 .dark {
-  --background: #1e1e28;
+  --background: #1a1a24;
   --foreground: #e0e0e0;
-  --board-bg: #1e1e28;
-  --toolbar-bg: rgba(30, 30, 42, 0.88);
-  --toolbar-border: rgba(255, 255, 255, 0.06);
+  --board-bg: #1a1a24;
+  --toolbar-bg: rgba(26, 26, 36, 0.88);
+  --toolbar-border: rgba(255, 255, 255, 0.08);
   --toolbar-fg: #d0d0d0;
   --toolbar-hover: rgba(255, 255, 255, 0.06);
   --toolbar-active: rgba(255, 255, 255, 0.1);
@@ -52,12 +52,20 @@ html, body {
   height: 100%;
   width: 100%;
   overflow: hidden;
+  /* Prevent iOS rubber-banding and overscroll */
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
+  /* Dynamic viewport height for mobile browsers */
+  height: 100dvh;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
   font-family: var(--font-inter, system-ui, -apple-system, sans-serif);
+  /* Prevent pull-to-refresh and browser gestures */
+  overscroll-behavior: none;
+  touch-action: none;
 }
 
 /* ========== SCROLLBAR HIDE ========== */
@@ -68,12 +76,14 @@ body {
 /* ========== CANVAS BACKGROUND ========== */
 .canvas-bg {
   background-color: var(--board-bg);
-  /* Subtle dot grid */
   background-image:
     radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
   background-size: 24px 24px;
-  /* Very subtle warm paper grain over everything */
   position: relative;
+  /* Prevent all browser gestures on canvas */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .canvas-bg::after {
@@ -101,11 +111,14 @@ body {
   color: #333;
   cursor: grab;
   user-select: none;
+  -webkit-user-select: none;
   transition: box-shadow 0.2s ease, transform 0.15s ease;
   overflow: hidden;
-  /* Subtle edge depth */
   border: 1px solid rgba(0, 0, 0, 0.04);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  /* Prevent iOS tap highlight and callout */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
 }
 
 .note-card:hover {
@@ -120,6 +133,7 @@ body {
   box-shadow: var(--note-shadow-drag);
   z-index: 9999 !important;
   transform: rotate(0.5deg) scale(1.02);
+  transition: none;
 }
 
 .note-card.selected {
@@ -146,6 +160,10 @@ body {
   cursor: text;
   padding: 0;
   overflow-y: auto;
+  -webkit-user-select: text;
+  user-select: text;
+  /* Prevent iOS zoom on focus */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .note-card .note-textarea:focus {
@@ -188,12 +206,14 @@ body {
   position: absolute;
   bottom: 0;
   right: 0;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   cursor: nwse-resize;
   opacity: 0;
   transition: opacity 0.15s;
   z-index: 2;
+  /* Larger touch target for mobile */
+  touch-action: none;
 }
 
 .note-card:hover .resize-handle {
@@ -220,87 +240,73 @@ body {
   border-color: transparent transparent rgba(255, 255, 255, 0.25) transparent;
 }
 
-/* Note color variations - soft pastel */
+/* ========== NOTE COLORS - Light Mode (Soft Pastel) ========== */
 .note-yellow {
   background: linear-gradient(135deg, #fffef5, #fff9c4, #fff3a0);
 }
-
 .note-pink {
   background: linear-gradient(135deg, #fff5f8, #fce4ec, #f8bbd0);
 }
-
 .note-blue {
   background: linear-gradient(135deg, #f5faff, #e3f2fd, #bbdefb);
 }
-
 .note-green {
   background: linear-gradient(135deg, #f5fdf6, #e8f5e9, #c8e6c9);
 }
-
 .note-orange {
   background: linear-gradient(135deg, #fffaf5, #fff3e0, #ffe0b2);
 }
-
 .note-purple {
   background: linear-gradient(135deg, #fdf5ff, #f3e5f5, #e1bee7);
 }
-
 .note-white {
   background: linear-gradient(135deg, #ffffff, #fdfdfd, #fafafa);
   border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-/* Dark mode note dimming */
+/* ========== NOTE COLORS - Dark Mode (Clean Pastel Tints, Not Muddy) ========== */
 .dark .note-yellow {
-  background: linear-gradient(135deg, #4a4838, #5c5638, #4a4428);
-  color: #eee8d5;
+  background: linear-gradient(135deg, #5c5628, #6b6428, #7a7028);
+  color: #f5f0c0;
 }
-.dark .note-yellow .note-textarea {
-  color: #eee8d5;
-}
+.dark .note-yellow .note-textarea { color: #f5f0c0; }
+
 .dark .note-pink {
-  background: linear-gradient(135deg, #4a3840, #5c3a4a, #4a2e3c);
-  color: #f0d8e0;
+  background: linear-gradient(135deg, #5c3040, #6b3850, #7a4060);
+  color: #f5d0e0;
 }
-.dark .note-pink .note-textarea {
-  color: #f0d8e0;
-}
+.dark .note-pink .note-textarea { color: #f5d0e0; }
+
 .dark .note-blue {
-  background: linear-gradient(135deg, #38404a, #3a4658, #2e3848);
-  color: #d0ddf0;
+  background: linear-gradient(135deg, #2e405c, #38506b, #40607a);
+  color: #c8ddf5;
 }
-.dark .note-blue .note-textarea {
-  color: #d0ddf0;
-}
+.dark .note-blue .note-textarea { color: #c8ddf5; }
+
 .dark .note-green {
-  background: linear-gradient(135deg, #384a3e, #3a4e3a, #2e402e);
-  color: #d0e8d0;
+  background: linear-gradient(135deg, #305c38, #386b40, #407a48);
+  color: #c8f5d0;
 }
-.dark .note-green .note-textarea {
-  color: #d0e8d0;
-}
+.dark .note-green .note-textarea { color: #c8f5d0; }
+
 .dark .note-orange {
-  background: linear-gradient(135deg, #4a4238, #5c4a38, #4a3a28);
-  color: #f0e0c8;
+  background: linear-gradient(135deg, #5c4a28, #6b5828, #7a6428);
+  color: #f5e8c0;
 }
-.dark .note-orange .note-textarea {
-  color: #f0e0c8;
-}
+.dark .note-orange .note-textarea { color: #f5e8c0; }
+
 .dark .note-purple {
-  background: linear-gradient(135deg, #403848, #4a3850, #3a2e42);
-  color: #e0d0f0;
+  background: linear-gradient(135deg, #4a305c, #58386b, #66407a);
+  color: #e0c8f5;
 }
-.dark .note-purple .note-textarea {
-  color: #e0d0f0;
-}
+.dark .note-purple .note-textarea { color: #e0c8f5; }
+
 .dark .note-white {
   background: linear-gradient(135deg, #3a3a3a, #363636, #333333);
   color: #e0e0e0;
   border-color: rgba(255, 255, 255, 0.08);
 }
-.dark .note-white .note-textarea {
-  color: #e0e0e0;
-}
+.dark .note-white .note-textarea { color: #e0e0e0; }
 
 /* ========== GROUP FRAME STYLES ========== */
 .group-frame {
@@ -308,6 +314,9 @@ body {
   position: absolute;
   box-shadow: var(--group-shadow);
   user-select: none;
+  -webkit-user-select: none;
+  /* Prevent iOS tap highlight */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .group-frame.selected {
@@ -331,7 +340,6 @@ body {
     inset 0 2px 6px rgba(0, 0, 0, 0.12),
     inset 0 -2px 6px rgba(255, 255, 255, 0.06),
     0 4px 16px rgba(0, 0, 0, 0.1);
-  /* Cork grain */
   background-size: 8px 8px, 100% 100%;
 }
 
@@ -360,7 +368,6 @@ body {
   box-shadow:
     inset 0 2px 8px rgba(0, 0, 0, 0.3),
     0 4px 16px rgba(0, 0, 0, 0.15);
-  /* Chalk smear texture */
   background-image:
     url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.06'/%3E%3C/svg%3E");
   background-size: 200px 200px;
@@ -380,9 +387,11 @@ body {
   font-size: 12px;
   font-weight: 600;
   cursor: move;
-  min-height: 28px;
+  min-height: 32px;
   border-radius: 6px 6px 0 0;
   letter-spacing: 0.01em;
+  /* Prevent iOS tap highlight */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .group-title-input {
@@ -395,6 +404,7 @@ body {
   font-family: inherit;
   padding: 2px 4px;
   border-radius: 2px;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .group-title-input:focus {
@@ -410,11 +420,17 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 2px 5px;
-  border-radius: 3px;
-  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 13px;
   opacity: 0.5;
   transition: opacity 0.15s, background 0.15s;
+  min-width: 28px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .group-btn:hover {
@@ -446,17 +462,25 @@ body {
   color: var(--toolbar-fg);
   font-size: 13px;
   user-select: none;
-  max-width: calc(100vw - 24px);
+  -webkit-user-select: none;
+  max-width: calc(100vw - 16px);
   overflow-x: auto;
   flex-wrap: nowrap;
+  /* Smooth scroll for overflow */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .toolbar-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  min-width: 36px;
+  min-height: 36px;
   border: none;
   background: transparent;
   border-radius: 7px;
@@ -466,6 +490,9 @@ body {
   transition: background 0.12s, color 0.12s, opacity 0.12s;
   position: relative;
   flex-shrink: 0;
+  /* Prevent iOS tap highlight */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .toolbar-btn:hover {
@@ -505,7 +532,7 @@ body {
   font-size: 11px;
   width: auto;
   padding: 0 6px;
-  min-width: 36px;
+  min-width: 40px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -517,7 +544,14 @@ body {
   flex-shrink: 0;
 }
 
-/* Tooltips */
+/* Toolbar snap-active state */
+.toolbar-btn.snap-active {
+  background: var(--toolbar-active);
+  color: var(--selection-color);
+  opacity: 1;
+}
+
+/* Tooltips - hide on touch devices */
 .tooltip {
   position: absolute;
   top: -30px;
@@ -536,8 +570,10 @@ body {
   font-weight: 400;
 }
 
-.toolbar-btn:hover .tooltip {
-  opacity: 1;
+@media (hover: hover) {
+  .toolbar-btn:hover .tooltip {
+    opacity: 1;
+  }
 }
 
 /* ========== SELECTION BOX ========== */
@@ -633,29 +669,39 @@ body {
 }
 
 /* ========== COLOR PICKER ========== */
+.color-picker-container {
+  position: relative;
+}
+
 .color-picker {
   position: absolute;
-  top: 40px;
+  top: 44px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--toolbar-bg);
   backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--toolbar-border);
   border-radius: 10px;
-  padding: 6px;
+  padding: 6px 8px;
   display: flex;
-  gap: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  gap: 6px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   z-index: 60;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .color-swatch {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 9999px;
   border: 2px solid transparent;
   cursor: pointer;
   transition: border-color 0.12s, transform 0.12s;
+  flex-shrink: 0;
+  /* Touch-friendly - 44px effective target via spacing */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .color-swatch:hover {
@@ -720,4 +766,135 @@ body {
 
 .canvas-grab {
   cursor: grab;
+}
+
+/* ========== RESPONSIVE: TABLET/MOBILE TOOLBAR ========== */
+
+/* Tablet: slightly smaller toolbar */
+@media (max-width: 768px) {
+  .toolbar {
+    padding: 3px 6px;
+    gap: 1px;
+    border-radius: 10px;
+    top: 8px;
+  }
+
+  .toolbar-btn {
+    min-width: 32px;
+    min-height: 32px;
+    font-size: 14px;
+    border-radius: 6px;
+  }
+
+  .toolbar-label {
+    font-size: 12px;
+    padding: 0 4px;
+  }
+
+  .toolbar-separator {
+    margin: 0 2px;
+  }
+
+  .toast-container {
+    bottom: 12px;
+    right: 12px;
+    left: 12px;
+  }
+
+  .toast {
+    font-size: 12px;
+    padding: 8px 14px;
+  }
+}
+
+/* Mobile: compact toolbar, full scrollable */
+@media (max-width: 480px) {
+  .toolbar {
+    top: 6px;
+    padding: 3px 4px;
+    gap: 1px;
+    border-radius: 8px;
+    max-width: calc(100vw - 12px);
+  }
+
+  .toolbar-btn {
+    min-width: 30px;
+    min-height: 30px;
+    font-size: 13px;
+    border-radius: 5px;
+  }
+
+  .toolbar-label {
+    font-size: 11px;
+    padding: 0 3px;
+  }
+
+  .toolbar-stats {
+    font-size: 9px;
+  }
+
+  .toolbar-zoom-btn {
+    font-size: 10px;
+  }
+
+  .color-picker {
+    top: 40px;
+    padding: 4px 6px;
+    gap: 4px;
+  }
+
+  .color-swatch {
+    width: 26px;
+    height: 26px;
+  }
+
+  .empty-state-content h2 {
+    font-size: 14px;
+  }
+
+  .empty-state-content p {
+    font-size: 11px;
+  }
+}
+
+/* ========== SAFE AREA (iOS Notch / Home Indicator) ========== */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .toast-container {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    right: calc(12px + env(safe-area-inset-right));
+    left: calc(12px + env(safe-area-inset-left));
+  }
+
+  .toolbar {
+    top: calc(6px + env(safe-area-inset-top));
+  }
+}
+
+/* ========== RESPONSIVE NOTE TEXT ========== */
+@media (max-width: 480px) {
+  .note-card {
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+
+  .note-card .note-textarea {
+    font-size: 13px;
+  }
+
+  .group-title-bar {
+    font-size: 11px;
+    min-height: 28px;
+    padding: 3px 8px;
+  }
+
+  .group-title-input {
+    font-size: 11px;
+  }
+
+  .group-btn {
+    font-size: 12px;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 3px 5px;
+  }
 }

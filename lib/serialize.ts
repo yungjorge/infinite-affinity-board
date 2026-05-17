@@ -36,6 +36,7 @@ export function validateBoardShape(data: unknown): boolean {
   if (!Array.isArray(board.groups)) return false;
   if (!board.viewport || typeof board.viewport !== "object") return false;
   if (!board.settings || typeof board.settings !== "object") return false;
+  // Validate settings (accept both old gridEnabled and new snapEnabled)
 
   // Validate notes
   for (const note of board.notes) {

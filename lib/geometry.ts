@@ -1,5 +1,5 @@
 import { ViewportState, NoteItem } from "./boardTypes";
-import { MIN_ZOOM, MAX_ZOOM } from "./constants";
+import { MIN_ZOOM, MAX_ZOOM, SNAP_GRID_SIZE } from "./constants";
 
 export interface Point {
   x: number;
@@ -121,4 +121,15 @@ export function getSelectionRect(
 
 export function noteToRect(note: NoteItem): Rect {
   return { x: note.x, y: note.y, width: note.width, height: note.height };
+}
+
+export function snapToGrid(value: number, gridSize: number = SNAP_GRID_SIZE): number {
+  return Math.round(value / gridSize) * gridSize;
+}
+
+export function snapPointToGrid(point: Point, gridSize: number = SNAP_GRID_SIZE): Point {
+  return {
+    x: snapToGrid(point.x, gridSize),
+    y: snapToGrid(point.y, gridSize),
+  };
 }

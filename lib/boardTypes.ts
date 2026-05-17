@@ -43,7 +43,7 @@ export type ViewportState = {
 
 export type BoardSettings = {
   theme: "light" | "dark" | "system";
-  gridEnabled: boolean;
+  snapEnabled: boolean;
 };
 
 export type NoteColor =

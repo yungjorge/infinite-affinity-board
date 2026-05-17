@@ -24,20 +24,34 @@ export function ColorPicker({ selectedColor, onSelect, onClose }: ColorPickerPro
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         onClose();
       }
     };
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+
     // Delay to prevent immediate close from the button click
     setTimeout(() => {
       document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside, { passive: true });
+      document.addEventListener("keydown", handleEscape);
     }, 0);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, [onClose]);
 
   return (
-    <div ref={ref} className="color-picker">
+    <div ref={ref} className="color-picker" role="listbox" aria-label="Note color picker">
       {COLORS.map((color) => (
         <button
           key={color}
@@ -52,7 +66,9 @@ export function ColorPicker({ selectedColor, onSelect, onClose }: ColorPickerPro
             onSelect(color);
           }}
           aria-label={`${color} note color`}
+          aria-selected={color === selectedColor}
           title={color.charAt(0).toUpperCase() + color.slice(1)}
+          role="option"
         />
       ))}
     </div>

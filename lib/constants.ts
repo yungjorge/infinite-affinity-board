@@ -2,8 +2,10 @@ import { NoteColor } from "./boardTypes";
 
 export const DEFAULT_NOTE_WIDTH = 200;
 export const DEFAULT_NOTE_HEIGHT = 200;
-export const MIN_NOTE_WIDTH = 150;
-export const MIN_NOTE_HEIGHT = 150;
+export const MOBILE_NOTE_WIDTH = 150;
+export const MOBILE_NOTE_HEIGHT = 140;
+export const MIN_NOTE_WIDTH = 120;
+export const MIN_NOTE_HEIGHT = 100;
 export const MAX_NOTE_WIDTH = 600;
 export const MAX_NOTE_HEIGHT = 600;
 export const MIN_ZOOM = 0.1;
@@ -12,6 +14,7 @@ export const ZOOM_STEP = 0.1;
 export const DEFAULT_ZOOM = 1;
 export const STORAGE_KEY = "affinity-board";
 export const SHARE_PREFIX = "/board/";
+export const SNAP_GRID_SIZE = 20;
 
 export const NOTE_COLORS: Record<NoteColor, string> = {
   yellow: "#FFF9C4",

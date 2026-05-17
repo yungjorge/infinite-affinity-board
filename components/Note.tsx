@@ -10,16 +10,16 @@ interface NoteProps {
   isSelected: boolean;
   viewport: ViewportState;
   onUpdate: (updates: Partial<NoteItem>) => void;
-  onDelete: () => void;
   onSelect: (multi: boolean) => void;
   onBringToFront: () => void;
   onDragStart: () => void;
   onDragEnd: (x: number, y: number) => void;
   onResize: (width: number, height: number) => void;
-  onDuplicate: () => void;
   multiSelected: boolean;
   setIsEditing: (editing: boolean) => void;
   autoFocus?: boolean;
+  onContextMenu: (screenX: number, screenY: number) => void;
+  isMobile: boolean;
 }
 
 export function Note({
@@ -27,16 +27,16 @@ export function Note({
   isSelected,
   viewport,
   onUpdate,
-  onDelete,
   onSelect,
   onBringToFront,
   onDragStart,
   onDragEnd,
   onResize,
-  onDuplicate,
   multiSelected,
   setIsEditing,
   autoFocus,
+  onContextMenu,
+  isMobile,
 }: NoteProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -48,6 +48,11 @@ export function Note({
   const resizeStart = useRef({ width: 0, height: 0 });
   const noteRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Long-press tracking
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+  const hasMoved = useRef(false);
 
   useEffect(() => {
     setLocalText(note.text);
@@ -92,7 +97,8 @@ export function Note({
     autoResize();
   }, [localText, autoResize]);
 
-  // Drag handling
+  // ── Mouse Drag Handling ───────────────────────────────
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       const target = e.target as HTMLElement;
@@ -123,6 +129,142 @@ export function Note({
     },
     [note.width, note.height]
   );
+
+  // ── Touch Drag Handling ───────────────────────────────
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === "TEXTAREA") {
+        return;
+      }
+      if (target.closest(".resize-handle")) {
+        e.stopPropagation();
+        e.preventDefault();
+        const touch = e.touches[0];
+        setIsResizing(true);
+        dragStartPos.current = { x: touch.clientX, y: touch.clientY };
+        resizeStart.current = { width: note.width, height: note.height };
+        return;
+      }
+
+      e.stopPropagation();
+      e.preventDefault();
+
+      const touch = e.touches[0];
+      touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+      hasMoved.current = false;
+
+      onBringToFront();
+      onDragStart();
+
+      // Long-press detection
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+      longPressTimer.current = setTimeout(() => {
+        if (!hasMoved.current && noteRef.current) {
+          const rect = noteRef.current.getBoundingClientRect();
+          onContextMenu(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        }
+      }, 600);
+    },
+    [note.width, note.height, onBringToFront, onDragStart, onContextMenu]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch || !touchStartPos.current) return;
+
+      const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+      const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+
+      if (dx > 5 || dy > 5) {
+        hasMoved.current = true;
+        if (longPressTimer.current) {
+          clearTimeout(longPressTimer.current);
+          longPressTimer.current = null;
+        }
+      }
+
+      if (!isDragging && !isResizing && (dx > 3 || dy > 3)) {
+        onSelect(false);
+        setIsDragging(true);
+        dragStartPos.current = { x: touchStartPos.current.x, y: touchStartPos.current.y };
+        noteStartPos.current = { x: note.x, y: note.y };
+      }
+
+      if (isDragging) {
+        const moveDx = (touch.clientX - dragStartPos.current.x) / viewport.zoom;
+        const moveDy = (touch.clientY - dragStartPos.current.y) / viewport.zoom;
+
+        if (noteRef.current) {
+          const newX = noteStartPos.current.x + moveDx;
+          const newY = noteStartPos.current.y + moveDy;
+          noteRef.current.style.left = `${newX}px`;
+          noteRef.current.style.top = `${newY}px`;
+        }
+      }
+
+      if (isResizing) {
+        const resizeDx = (touch.clientX - dragStartPos.current.x) / viewport.zoom;
+        const resizeDy = (touch.clientY - dragStartPos.current.y) / viewport.zoom;
+
+        const newWidth = Math.min(
+          MAX_NOTE_WIDTH,
+          Math.max(MIN_NOTE_WIDTH, resizeStart.current.width + resizeDx)
+        );
+        const newHeight = Math.min(
+          MAX_NOTE_HEIGHT,
+          Math.max(MIN_NOTE_HEIGHT, resizeStart.current.height + resizeDy)
+        );
+
+        if (noteRef.current) {
+          noteRef.current.style.width = `${newWidth}px`;
+          noteRef.current.style.height = `${newHeight}px`;
+        }
+      }
+    },
+    [isDragging, isResizing, viewport.zoom, note.x, note.y, onSelect]
+  );
+
+  const handleTouchEnd = useCallback(
+    () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+
+      if (isDragging) {
+        if (noteRef.current) {
+          const left = parseFloat(noteRef.current.style.left);
+          const top = parseFloat(noteRef.current.style.top);
+          if (!isNaN(left) && !isNaN(top)) {
+            onDragEnd(left, top);
+          }
+        }
+        setIsDragging(false);
+      }
+
+      if (isResizing) {
+        if (noteRef.current) {
+          const newW = parseFloat(noteRef.current.style.width);
+          const newH = parseFloat(noteRef.current.style.height);
+          if (!isNaN(newW) && !isNaN(newH)) {
+            onResize(
+              Math.min(MAX_NOTE_WIDTH, Math.max(MIN_NOTE_WIDTH, newW)),
+              Math.min(MAX_NOTE_HEIGHT, Math.max(MIN_NOTE_HEIGHT, newH))
+            );
+          }
+        }
+        setIsResizing(false);
+      }
+
+      touchStartPos.current = null;
+    },
+    [isDragging, isResizing, onDragEnd, onResize]
+  );
+
+  // ── Mouse Move/Up (shared with resize) ────────────────
 
   useEffect(() => {
     if (!isDragging && !isResizing) return;
@@ -217,34 +359,14 @@ export function Note({
     }
   }, [setIsEditing, onUpdate, localText]);
 
-  // Context menu
+  // Context menu (right-click on desktop)
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-
-      const items: { label: string; action: () => void }[] = [
-        {
-          label: `Delete`,
-          action: onDelete,
-        },
-        {
-          label: `Duplicate`,
-          action: onDuplicate,
-        },
-      ];
-
-      // Build a simple menu string
-      const menuText = items.map((item, i) => `${i + 1}. ${item.label}`).join("\n");
-      const choice = window.prompt(`Note actions:\n\n${menuText}\n\nEnter number:`, "");
-      if (choice) {
-        const idx = parseInt(choice, 10) - 1;
-        if (idx >= 0 && idx < items.length) {
-          items[idx].action();
-        }
-      }
+      onContextMenu(e.clientX, e.clientY);
     },
-    [onDelete, onDuplicate]
+    [onContextMenu]
   );
 
   const colorClass = `note-${note.color}`;
@@ -252,6 +374,7 @@ export function Note({
   return (
     <div
       ref={noteRef}
+      data-id={note.id}
       className={`note-card ${colorClass} ${isSelected ? "selected" : ""} ${
         isDragging ? "dragging" : ""
       } ${appeared ? "note-appear" : ""}`}
@@ -265,6 +388,9 @@ export function Note({
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       onClick={(e) => e.stopPropagation()}
     >
       <textarea
@@ -275,6 +401,7 @@ export function Note({
         onBlur={handleTextareaBlur}
         className="note-textarea"
         placeholder="Type here..."
+        style={{ fontSize: isMobile ? "13px" : "14px" }}
       />
       <div
         className="resize-handle"

@@ -10,11 +10,20 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Affinity — Infinite Board",
   description: "An infinite canvas for organizing sticky notes by affinity",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Affinity Board",
+  },
 };
 
 export const viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

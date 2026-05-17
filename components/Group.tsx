@@ -15,6 +15,7 @@ interface GroupProps {
   onUngroup: () => void;
   onMoveGroupWithNotes: (dx: number, dy: number) => void;
   setIsEditing: (editing: boolean) => void;
+  onContextMenu: (screenX: number, screenY: number) => void;
 }
 
 export function Group({
@@ -29,6 +30,7 @@ export function Group({
   onUngroup,
   onMoveGroupWithNotes,
   setIsEditing,
+  onContextMenu,
 }: GroupProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -38,9 +40,28 @@ export function Group({
   const groupRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  // Long-press tracking
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+  const hasMoved = useRef(false);
+
   useEffect(() => {
     setLocalTitle(group.title);
   }, [group.title]);
+
+  // Listen for rename event from context menu
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.groupId === group.id) {
+        setIsEditingTitle(true);
+        setIsEditing(true);
+        setTimeout(() => titleInputRef.current?.focus(), 50);
+      }
+    };
+    window.addEventListener("group-rename", handler);
+    return () => window.removeEventListener("group-rename", handler);
+  }, [group.id, setIsEditing]);
 
   // Auto-calculate group size from child notes
   useEffect(() => {
@@ -68,7 +89,8 @@ export function Group({
     }
   }, [notes, group.x, group.y, group.width, group.height, onUpdate]);
 
-  // Drag handling - zoom-correct
+  // ── Mouse Drag ───────────────────────────────────────
+
   const handleDragStart = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -109,6 +131,91 @@ export function Group({
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isDragging, viewport.zoom, onMoveGroupWithNotes]);
+
+  // ── Touch Drag ───────────────────────────────────────
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      const touch = e.touches[0];
+      touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+      hasMoved.current = false;
+
+      // Long-press detection
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+      longPressTimer.current = setTimeout(() => {
+        if (!hasMoved.current && groupRef.current) {
+          const rect = groupRef.current.getBoundingClientRect();
+          onContextMenu(rect.left + rect.width / 2, rect.top + 28);
+        }
+      }, 600);
+    },
+    [onContextMenu]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch || !touchStartPos.current) return;
+
+      const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+      const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+
+      if (dx > 5 || dy > 5) {
+        hasMoved.current = true;
+        if (longPressTimer.current) {
+          clearTimeout(longPressTimer.current);
+          longPressTimer.current = null;
+        }
+      }
+
+      if (!isDragging && (dx > 3 || dy > 3)) {
+        onSelect(false);
+        setIsDragging(true);
+        dragStartPos.current = { x: touchStartPos.current.x, y: touchStartPos.current.y };
+        groupStartPos.current = { x: group.x, y: group.y };
+      }
+
+      if (isDragging) {
+        const moveDx = (touch.clientX - dragStartPos.current.x) / viewport.zoom;
+        const moveDy = (touch.clientY - dragStartPos.current.y) / viewport.zoom;
+
+        if (groupRef.current) {
+          const newX = groupStartPos.current.x + moveDx;
+          const newY = groupStartPos.current.y + moveDy;
+          groupRef.current.style.left = `${newX}px`;
+          groupRef.current.style.top = `${newY}px`;
+        }
+      }
+    },
+    [isDragging, viewport.zoom, group.x, group.y, onSelect]
+  );
+
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+
+      if (isDragging) {
+        const touch = e.changedTouches[0];
+        if (touch && dragStartPos.current) {
+          const dx = (touch.clientX - dragStartPos.current.x) / viewport.zoom;
+          const dy = (touch.clientY - dragStartPos.current.y) / viewport.zoom;
+          onMoveGroupWithNotes(dx, dy);
+        }
+        setIsDragging(false);
+      }
+
+      touchStartPos.current = null;
+    },
+    [isDragging, viewport.zoom, onMoveGroupWithNotes]
+  );
+
+  // ── Title Editing ────────────────────────────────────
 
   const handleTitleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -163,27 +270,14 @@ export function Group({
     [localTitle, group.title, onRename, setIsEditing]
   );
 
-  // Context menu
+  // Right-click desktop context menu
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      // Show a simple native-like action via prompt
-      const action = window.prompt(
-        `Group: ${group.title}\n\nType: rename, delete, ungroup, or cancel`,
-        ""
-      );
-      if (action === "rename") {
-        setIsEditingTitle(true);
-        setIsEditing(true);
-        setTimeout(() => titleInputRef.current?.focus(), 0);
-      } else if (action === "delete") {
-        onDelete();
-      } else if (action === "ungroup") {
-        onUngroup();
-      }
+      onContextMenu(e.clientX, e.clientY);
     },
-    [group.title, onDelete, onUngroup, setIsEditing]
+    [onContextMenu]
   );
 
   const themeClass = `group-frame-${group.theme}`;
@@ -192,6 +286,7 @@ export function Group({
   return (
     <div
       ref={groupRef}
+      data-id={group.id}
       className={`group-frame ${themeClass} ${isSelected ? "selected" : ""}`}
       style={{
         left: `${group.x}px`,
@@ -208,6 +303,9 @@ export function Group({
       <div
         className={`group-title-bar ${titleThemeClass}`}
         onMouseDown={handleDragStart}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         {isEditingTitle ? (
           <input
@@ -238,6 +336,7 @@ export function Group({
               onUngroup();
             }}
             title="Ungroup"
+            aria-label="Ungroup"
           >
             ✕
           </button>
@@ -248,13 +347,14 @@ export function Group({
               onDelete();
             }}
             title="Delete group"
+            aria-label="Delete group"
           >
             🗑
           </button>
         </div>
       </div>
 
-      {/* Body area (padding for visual frame) */}
+      {/* Body area */}
       <div className="group-body" style={{ height: "calc(100% - 28px)" }} />
     </div>
   );

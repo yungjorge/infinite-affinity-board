@@ -13,17 +13,25 @@ import { generateId } from "@/lib/id";
 import {
   DEFAULT_NOTE_WIDTH,
   DEFAULT_NOTE_HEIGHT,
+  MOBILE_NOTE_WIDTH,
+  MOBILE_NOTE_HEIGHT,
+  SNAP_GRID_SIZE,
 } from "@/lib/constants";
 import { saveBoard, loadBoard } from "@/lib/storage";
-import { getViewportCenter, getBoundsForNotes, noteToRect, rectsIntersect } from "@/lib/geometry";
+import { getViewportCenter, getBoundsForNotes, noteToRect, rectsIntersect, snapToGrid } from "@/lib/geometry";
 import { compressBoardForUrl } from "@/lib/serialize";
+
+function isMobileLike(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.innerWidth < 768;
+}
 
 const defaultBoardState: BoardState = {
   version: 1,
   notes: [],
   groups: [],
   viewport: { x: 0, y: 0, zoom: 1 },
-  settings: { theme: "system", gridEnabled: true },
+  settings: { theme: "system", snapEnabled: false },
   updatedAt: Date.now(),
 };
 
@@ -58,6 +66,7 @@ export interface BoardAPI {
   clearSelection: () => void;
   selectAllInRect: (x: number, y: number, width: number, height: number) => void;
   deleteSelected: () => void;
+  changeSelectedColor: (color: NoteColor) => void;
 
   exportBoard: () => string;
   importBoard: (json: string) => boolean;
@@ -73,7 +82,15 @@ export function useBoard(containerSize?: { width: number; height: number }) {
   const [board, setBoard] = useState<BoardState>(() => {
     if (typeof window === "undefined") return defaultBoardState;
     const saved = loadBoard();
-    return saved && saved.version >= 1 ? saved : defaultBoardState;
+    if (saved && saved.version >= 1) {
+      // Migrate old boards: if gridEnabled was true, set snapEnabled
+      const oldSettings = saved.settings as Record<string, unknown>;
+      if (oldSettings.gridEnabled === true && saved.settings.snapEnabled === undefined) {
+        saved.settings.snapEnabled = true;
+      }
+      return saved;
+    }
+    return defaultBoardState;
   });
 
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
@@ -122,6 +139,10 @@ export function useBoard(containerSize?: { width: number; height: number }) {
 
   const addNote = useCallback(
     (defaultColor: NoteColor = "yellow"): NoteItem => {
+      const mobile = isMobileLike();
+      const noteW = mobile ? MOBILE_NOTE_WIDTH : DEFAULT_NOTE_WIDTH;
+      const noteH = mobile ? MOBILE_NOTE_HEIGHT : DEFAULT_NOTE_HEIGHT;
+
       const center =
         containerSize && containerSize.width > 0
           ? getViewportCenter(board.viewport, containerSize.width, containerSize.height)
@@ -130,13 +151,22 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       const newZ = lastZIndex + 1;
       setLastZIndex(newZ);
 
+      let noteX = center.x - noteW / 2;
+      let noteY = center.y - noteH / 2;
+
+      // Snap to grid if enabled
+      if (board.settings.snapEnabled) {
+        noteX = snapToGrid(noteX, SNAP_GRID_SIZE);
+        noteY = snapToGrid(noteY, SNAP_GRID_SIZE);
+      }
+
       const now = Date.now();
       const note: NoteItem = {
         id: generateId(),
-        x: center.x - DEFAULT_NOTE_WIDTH / 2,
-        y: center.y - DEFAULT_NOTE_HEIGHT / 2,
-        width: DEFAULT_NOTE_WIDTH,
-        height: DEFAULT_NOTE_HEIGHT,
+        x: noteX,
+        y: noteY,
+        width: noteW,
+        height: noteH,
         color: defaultColor,
         text: "",
         zIndex: newZ,
@@ -151,7 +181,6 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       };
       pushHistory(board);
       persistState(newBoard);
-      // Auto-select the new note
       setSelectedNoteIds([note.id]);
       setSelectedGroupIds([]);
       return note;
@@ -207,7 +236,6 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     [board, persistState]
   );
 
-  // Move multiple notes at once (for multi-select drag)
   const moveNotes = useCallback(
     (deltas: Map<string, { x: number; y: number }>) => {
       if (deltas.size === 0) return;
@@ -433,21 +461,30 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     [board, persistState, pushHistory]
   );
 
-  // Move a group AND all its notes together (drag group frame)
   const moveGroupWithNotes = useCallback(
     (id: string, dx: number, dy: number) => {
       const group = board.groups.find((g) => g.id === id);
       if (!group) return;
+
+      let finalDx = dx;
+      let finalDy = dy;
+      if (board.settings.snapEnabled) {
+        const targetX = snapToGrid(group.x + dx, SNAP_GRID_SIZE);
+        const targetY = snapToGrid(group.y + dy, SNAP_GRID_SIZE);
+        finalDx = targetX - group.x;
+        finalDy = targetY - group.y;
+      }
+
       const newBoard = {
         ...board,
         groups: board.groups.map((g) =>
           g.id === id
-            ? { ...g, x: g.x + dx, y: g.y + dy, updatedAt: Date.now() }
+            ? { ...g, x: g.x + finalDx, y: g.y + finalDy, updatedAt: Date.now() }
             : g
         ),
         notes: board.notes.map((n) =>
           n.groupId === id
-            ? { ...n, x: n.x + dx, y: n.y + dy, updatedAt: Date.now() }
+            ? { ...n, x: n.x + finalDx, y: n.y + finalDy, updatedAt: Date.now() }
             : n
         ),
         updatedAt: Date.now(),
@@ -523,6 +560,24 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     setSelectedGroupIds([]);
   }, [board, selectedNoteIds, selectedGroupIds, persistState, pushHistory]);
 
+  const changeSelectedColor = useCallback(
+    (color: NoteColor) => {
+      if (selectedNoteIds.length === 0) return;
+      const newBoard = {
+        ...board,
+        notes: board.notes.map((n) =>
+          selectedNoteIds.includes(n.id)
+            ? { ...n, color, updatedAt: Date.now() }
+            : n
+        ),
+        updatedAt: Date.now(),
+      };
+      pushHistory(board);
+      persistState(newBoard);
+    },
+    [board, selectedNoteIds, persistState, pushHistory]
+  );
+
   // ── Viewport & Settings ────────────────────────────────
 
   const setViewport = useCallback(
@@ -561,7 +616,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
           notes: data.notes,
           groups: data.groups || [],
           viewport: data.viewport || { x: 0, y: 0, zoom: 1 },
-          settings: data.settings || { theme: "system", gridEnabled: true },
+          settings: data.settings || { theme: "system", snapEnabled: false },
           updatedAt: Date.now(),
         };
         pushHistory(board);
@@ -638,6 +693,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     clearSelection,
     selectAllInRect,
     deleteSelected,
+    changeSelectedColor,
     exportBoard,
     importBoard,
     getShareUrl,

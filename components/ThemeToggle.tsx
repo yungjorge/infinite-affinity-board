@@ -27,9 +27,10 @@ export function ThemeToggle() {
   const toggle = useCallback(() => {
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
+      const stored = loadSettings();
       saveSettings({
         theme: next,
-        gridEnabled: true,
+        snapEnabled: stored?.snapEnabled ?? false,
       });
       return next;
     });

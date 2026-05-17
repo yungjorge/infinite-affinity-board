@@ -22,7 +22,13 @@ export interface CanvasControlsAPI {
   handleCanvasMouseMove: (e: React.MouseEvent) => void;
   handleCanvasMouseUp: () => void;
   handleWheel: (e: React.WheelEvent) => void;
+  // Touch handlers (call from Canvas component)
+  handleTouchStart: (e: React.TouchEvent) => void;
+  handleTouchMove: (e: React.TouchEvent) => void;
+  handleTouchEnd: (e: React.TouchEvent) => void;
   selectionRect: { x: number; y: number; width: number; height: number } | null;
+  // Whether this is a touch/mobile device
+  isTouchDevice: boolean;
 }
 
 export function useCanvasControls(
@@ -40,11 +46,32 @@ export function useCanvasControls(
     width: number;
     height: number;
   } | null>(null);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
 
   const actionRef = useRef<"none" | "panning" | "selecting">("none");
   const dragStart = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const viewportStart = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isDragging = useRef(false);
+
+  // Pinch zoom state
+  const pinchStart = useRef<{
+    distance: number;
+    zoom: number;
+    centerX: number;
+    centerY: number;
+    viewportX: number;
+    viewportY: number;
+  } | null>(null);
+  const isPinching = useRef(false);
+
+  // Detect touch device on mount
+  useState(() => {
+    if (typeof window !== "undefined") {
+      setIsTouchDevice(
+        "ontouchstart" in window || navigator.maxTouchPoints > 0
+      );
+    }
+  });
 
   const setViewport = useCallback(
     (vp: ViewportState | ((prev: ViewportState) => ViewportState)) => {
@@ -81,7 +108,6 @@ export function useCanvasControls(
       const dx = e.clientX - dragStart.current.x;
       const dy = e.clientY - dragStart.current.y;
 
-      // Only start "dragging" after a 3px threshold
       if (!isDragging.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
         isDragging.current = true;
       }
@@ -96,7 +122,6 @@ export function useCanvasControls(
         });
         setIsPanning(true);
       } else if (actionRef.current === "selecting") {
-        // Convert screen positions to world coordinates using the viewport at drag start
         const startViewport = {
           ...viewport,
           x: viewportStart.current.x,
@@ -123,8 +148,6 @@ export function useCanvasControls(
       e.preventDefault();
       const delta = e.deltaY > 0 ? -1 : 1;
       const newZoom = clampZoom(viewport.zoom * (1 + delta * ZOOM_STEP));
-
-      // Zoom toward cursor position
       const mouseWorld = stw(e.clientX, e.clientY, viewport);
       setViewport({
         zoom: newZoom,
@@ -133,6 +156,117 @@ export function useCanvasControls(
       });
     },
     [viewport, setViewport]
+  );
+
+  // ── Touch Handlers ────────────────────────────────────
+
+  const getTouchDistance = (touches: React.TouchList): number => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 2) {
+        // Pinch zoom start
+        e.preventDefault();
+        isPinching.current = true;
+        actionRef.current = "none";
+        isDragging.current = false;
+        setSelectionRect(null);
+
+        const dist = getTouchDistance(e.touches);
+        const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+        pinchStart.current = {
+          distance: dist,
+          zoom: viewport.zoom,
+          centerX: cx,
+          centerY: cy,
+          viewportX: viewport.x,
+          viewportY: viewport.y,
+        };
+      } else if (e.touches.length === 1 && !isPinching.current) {
+        // Single finger: pan or select
+        const touch = e.touches[0];
+        // On mobile, single finger on canvas = pan by default
+        actionRef.current = "panning";
+        isDragging.current = false;
+        dragStart.current = { x: touch.clientX, y: touch.clientY };
+        viewportStart.current = { x: viewport.x, y: viewport.y };
+        setSelectionRect(null);
+        setIsPanning(true);
+      }
+    },
+    [viewport]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      e.preventDefault();
+
+      if (e.touches.length === 2 && pinchStart.current) {
+        // Pinch zoom
+        const dist = getTouchDistance(e.touches);
+        const ratio = dist / pinchStart.current.distance;
+        const newZoom = clampZoom(pinchStart.current.zoom * ratio);
+
+        const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+        // Zoom toward pinch center
+        const worldCenter = stw(
+          pinchStart.current.centerX,
+          pinchStart.current.centerY,
+          { x: pinchStart.current.viewportX, y: pinchStart.current.viewportY, zoom: pinchStart.current.zoom }
+        );
+
+        const dx = cx - pinchStart.current.centerX;
+        const dy = cy - pinchStart.current.centerY;
+
+        setViewport({
+          zoom: newZoom,
+          x: cx - worldCenter.x * newZoom,
+          y: cy - worldCenter.y * newZoom,
+        });
+
+        setIsPanning(true);
+      } else if (e.touches.length === 1 && actionRef.current === "panning") {
+        const touch = e.touches[0];
+        const dx = touch.clientX - dragStart.current.x;
+        const dy = touch.clientY - dragStart.current.y;
+
+        if (!isDragging.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+          isDragging.current = true;
+        }
+
+        if (isDragging.current) {
+          setViewport({
+            x: viewportStart.current.x + dx,
+            y: viewportStart.current.y + dy,
+            zoom: viewport.zoom,
+          });
+          setIsPanning(true);
+        }
+      }
+    },
+    [viewport, setViewport]
+  );
+
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length === 0) {
+        actionRef.current = "none";
+        setIsPanning(false);
+        setSelectionRect(null);
+        isDragging.current = false;
+        isPinching.current = false;
+        pinchStart.current = null;
+      }
+    },
+    []
   );
 
   const fitAll = useCallback(
@@ -158,7 +292,6 @@ export function useCanvasControls(
         return;
       }
 
-      // Compute bounds
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const item of allItems) {
         if (item.x < minX) minX = item.x;
@@ -196,6 +329,10 @@ export function useCanvasControls(
     handleCanvasMouseMove,
     handleCanvasMouseUp,
     handleWheel,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
     selectionRect,
+    isTouchDevice,
   };
 }
