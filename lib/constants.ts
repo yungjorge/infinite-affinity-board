@@ -14,15 +14,15 @@ export const ZOOM_STEP = 0.1;
 export const DEFAULT_ZOOM = 1;
 export const STORAGE_KEY = "affinity-board";
 export const SHARE_PREFIX = "/board/";
-export const SNAP_GRID_SIZE = 20;
+export const SNAP_GRID_SIZE = 24;
 
 export const NOTE_COLORS: Record<NoteColor, string> = {
-  yellow: "#FFF9C4",
-  pink: "#F8BBD0",
-  blue: "#BBDEFB",
-  green: "#C8E6C9",
-  orange: "#FFE0B2",
-  purple: "#E1BEE7",
+  yellow: "#FFF4A8",
+  pink: "#FFD1DC",
+  blue: "#BFE7FF",
+  green: "#CFF5D2",
+  orange: "#FFD6A5",
+  purple: "#E2D1FF",
   white: "#FFFFFF",
 };
 

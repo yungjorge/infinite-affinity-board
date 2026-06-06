@@ -8,6 +8,7 @@ interface ColorPickerProps {
   selectedColor: NoteColor;
   onSelect: (color: NoteColor) => void;
   onClose: () => void;
+  position: { x: number; y: number };
 }
 
 const COLORS: NoteColor[] = [
@@ -20,7 +21,7 @@ const COLORS: NoteColor[] = [
   "white",
 ];
 
-export function ColorPicker({ selectedColor, onSelect, onClose }: ColorPickerProps) {
+export function ColorPicker({ selectedColor, onSelect, onClose, position }: ColorPickerProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,7 +52,17 @@ export function ColorPicker({ selectedColor, onSelect, onClose }: ColorPickerPro
   }, [onClose]);
 
   return (
-    <div ref={ref} className="color-picker" role="listbox" aria-label="Note color picker">
+    <div
+      ref={ref}
+      className="color-picker"
+      style={{
+        top: `${position.y}px`,
+        left: `${position.x}px`,
+        transform: "translateX(-50%)",
+      }}
+      role="listbox"
+      aria-label="Note color picker"
+    >
       {COLORS.map((color) => (
         <button
           key={color}

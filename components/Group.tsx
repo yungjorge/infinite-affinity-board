@@ -299,6 +299,27 @@ export function Group({
       onContextMenu={handleContextMenu}
       onClick={(e) => e.stopPropagation()}
     >
+      {/* Push pin for corkboard theme */}
+      {group.theme === "corkboard" && (
+        <div
+          style={{
+            position: "absolute",
+            top: -10,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 2,
+            pointerEvents: "none",
+          }}
+        >
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="9" cy="8" rx="7" ry="7" fill="#c0392b" />
+            <ellipse cx="7" cy="6" rx="2.5" ry="2" fill="rgba(255,255,255,0.3)" />
+            <rect x="8" y="13" width="2" height="9" rx="1" fill="#7f8c8d" />
+            <ellipse cx="9" cy="22.5" rx="2.5" ry="1.5" fill="rgba(0,0,0,0.2)" />
+          </svg>
+        </div>
+      )}
+
       {/* Title bar */}
       <div
         className={`group-title-bar ${titleThemeClass}`}

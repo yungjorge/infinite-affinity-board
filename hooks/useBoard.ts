@@ -372,8 +372,9 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       const bounds = getBoundsForNotes(groupNotes);
       if (!bounds) throw new Error("Cannot create group");
 
-      const newZ = lastZIndex + 1;
-      setLastZIndex(newZ);
+      // Group must sit behind ALL its notes — use min note zIndex - 1
+      const minNoteZ = groupNotes.reduce((min, n) => Math.min(min, n.zIndex), Infinity);
+      const groupZ = Math.max(0, isFinite(minNoteZ) ? minNoteZ - 1 : 0);
 
       const now = Date.now();
       const group: GroupItem = {
@@ -385,7 +386,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
         title: "Group",
         theme: "corkboard",
         noteIds: [...noteIds],
-        zIndex: newZ - 1,
+        zIndex: groupZ,
         createdAt: now,
         updatedAt: now,
       };
@@ -404,7 +405,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       setSelectedNoteIds([]);
       return group;
     },
-    [board, lastZIndex, persistState, pushHistory]
+    [board, persistState, pushHistory]
   );
 
   const updateGroup = useCallback(

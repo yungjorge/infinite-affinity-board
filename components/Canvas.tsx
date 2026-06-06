@@ -169,6 +169,11 @@ export function Canvas() {
   const onCanvasMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (!isCanvasTarget(e.target)) return;
+      // Blur any focused textarea so editing mode exits before canvas actions
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active.tagName !== "BODY" && active.tagName !== "BUTTON") {
+        active.blur();
+      }
       canvasAPI.handleCanvasMouseDown(e, spaceHeldRef.current);
     },
     [canvasAPI, isCanvasTarget]
@@ -190,9 +195,9 @@ export function Canvas() {
       if (rect && rect.width > 4 && rect.height > 4) {
         boardAPI.selectAllInRect(rect.x, rect.y, rect.width, rect.height);
       } else if (!wasDragging && !rect && isCanvasTarget(e.target)) {
-        // Single click on empty board — create first note
         const isEmpty = boardAPI.board.notes.length === 0 && boardAPI.board.groups.length === 0;
         if (isEmpty) {
+          // Single click on empty board — create first note
           const world = canvasAPI.screenToWorld(e.clientX, e.clientY);
           boardAPI.clearSelection();
           const note = boardAPI.addNote(defaultColor);
@@ -204,6 +209,9 @@ export function Canvas() {
             : world.y - 100;
           boardAPI.moveNote(note.id, snapX, snapY);
           setFocusedNoteId(note.id);
+        } else {
+          // Single click on non-empty canvas — deselect only
+          boardAPI.clearSelection();
         }
       }
     },

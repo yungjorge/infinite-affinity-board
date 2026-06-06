@@ -21,6 +21,8 @@ export function Toolbar() {
   const { boardAPI, canvasAPI, defaultColor, setDefaultColor, isMobile } =
     useBoardContext();
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [colorPickerPos, setColorPickerPos] = useState<{ x: number; y: number } | null>(null);
+  const colorBtnRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const snapEnabled = boardAPI.board.settings.snapEnabled;
@@ -152,6 +154,14 @@ export function Toolbar() {
     fireToast("View reset", "info");
   }, [canvasAPI]);
 
+  const handleToggleColorPicker = useCallback(() => {
+    if (!showColorPicker && colorBtnRef.current) {
+      const rect = colorBtnRef.current.getBoundingClientRect();
+      setColorPickerPos({ x: rect.left + rect.width / 2, y: rect.bottom + 8 });
+    }
+    setShowColorPicker((prev) => !prev);
+  }, [showColorPicker]);
+
   // Color picker handler: apply to selected or set default
   const handleColorSelect = useCallback(
     (color: Parameters<typeof setDefaultColor>[0]) => {
@@ -196,41 +206,33 @@ export function Toolbar() {
           </svg>
         </button>
 
-        {/* Color picker */}
-        <div className="color-picker-container" style={{ position: "relative" }}>
-          <button
-            className="toolbar-btn"
-            title="Note Color"
-            aria-label="Change note color"
-            onClick={() => setShowColorPicker(!showColorPicker)}
-          >
-            {!isMobile && <span className="tooltip">Note Color</span>}
-            <div
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: "9999px",
-                backgroundColor: {
-                  yellow: "#FFF9C4",
-                  pink: "#F8BBD0",
-                  blue: "#BBDEFB",
-                  green: "#C8E6C9",
-                  orange: "#FFE0B2",
-                  purple: "#E1BEE7",
-                  white: "#FFFFFF",
-                }[defaultColor],
-                border: "1px solid rgba(0,0,0,0.15)",
-              }}
-            />
-          </button>
-          {showColorPicker && (
-            <ColorPicker
-              selectedColor={defaultColor}
-              onSelect={handleColorSelect}
-              onClose={() => setShowColorPicker(false)}
-            />
-          )}
-        </div>
+        {/* Color picker button */}
+        <button
+          ref={colorBtnRef}
+          className="toolbar-btn"
+          title="Note Color"
+          aria-label="Change note color"
+          onClick={handleToggleColorPicker}
+        >
+          {!isMobile && <span className="tooltip">Note Color</span>}
+          <div
+            style={{
+              width: 16,
+              height: 16,
+              borderRadius: "9999px",
+              backgroundColor: {
+                yellow: "#FFF4A8",
+                pink: "#FFD1DC",
+                blue: "#BFE7FF",
+                green: "#CFF5D2",
+                orange: "#FFD6A5",
+                purple: "#E2D1FF",
+                white: "#FFFFFF",
+              }[defaultColor],
+              border: "1.5px solid rgba(0,0,0,0.2)",
+            }}
+          />
+        </button>
 
         <div className="toolbar-separator" />
 
@@ -416,6 +418,16 @@ export function Toolbar() {
         {/* Theme toggle */}
         <ThemeToggle />
       </div>
+
+      {/* Color picker portal — rendered outside toolbar to avoid overflow clipping */}
+      {showColorPicker && colorPickerPos && (
+        <ColorPicker
+          selectedColor={defaultColor}
+          onSelect={handleColorSelect}
+          onClose={() => setShowColorPicker(false)}
+          position={colorPickerPos}
+        />
+      )}
 
       {/* Hidden file input for import */}
       <input
