@@ -63,6 +63,8 @@ export function Canvas() {
 
   // Track whether a canvas touch gesture involved panning (to suppress note creation)
   const canvasTouchMoved = useRef(false);
+  // Track whether the current touch cycle already created a note (double-tap suppresses touchEnd creation)
+  const touchNoteCreated = useRef(false);
 
   // Detect mobile
   useEffect(() => {
@@ -249,12 +251,14 @@ export function Canvas() {
         const now = Date.now();
         const timeSinceLastTap = now - lastTapTime.current;
 
-        // Reset pan tracking for this new gesture
+        // Reset gesture tracking for this new touch
         canvasTouchMoved.current = false;
+        touchNoteCreated.current = false;
 
         if (timeSinceLastTap < 300 && timeSinceLastTap > 0) {
-          // Double tap → add note immediately
+          // Double tap → add note immediately; flag so touchEnd skips its creation
           lastTapTime.current = 0;
+          touchNoteCreated.current = true;
           const world = canvasAPI.screenToWorld(touch.clientX, touch.clientY);
           boardAPI.clearSelection();
           const note = boardAPI.addNote(defaultColor);
@@ -298,13 +302,16 @@ export function Canvas() {
 
       const touch = e.changedTouches[0];
       const wasPanning = canvasTouchMoved.current || canvasAPI.getWasDragging();
+      const alreadyCreated = touchNoteCreated.current;
 
       // Single-tap on empty canvas: only create note if the gesture did NOT pan
+      // and a note was not already created in this touch cycle (e.g. double-tap)
       if (
         touch &&
         e.touches.length === 0 &&
         canvasAPI.selectionRect === null &&
-        !wasPanning
+        !wasPanning &&
+        !alreadyCreated
       ) {
         const target = e.target as HTMLElement;
         if (!target.closest(".note-card, .group-frame, .context-menu")) {
@@ -323,6 +330,7 @@ export function Canvas() {
       }
 
       canvasTouchMoved.current = false;
+      touchNoteCreated.current = false;
       canvasAPI.handleTouchEnd(e);
     },
     [canvasAPI, boardAPI, defaultColor]

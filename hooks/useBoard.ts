@@ -40,7 +40,7 @@ export interface BoardAPI {
   selectedNoteIds: string[];
   selectedGroupIds: string[];
 
-  addNote: (defaultColor?: NoteColor, focus?: boolean) => NoteItem;
+  addNote: (defaultColor?: NoteColor) => NoteItem;
   updateNote: (id: string, updates: Partial<NoteItem>) => void;
   deleteNote: (id: string) => void;
   moveNote: (id: string, x: number, y: number) => void;
@@ -661,14 +661,14 @@ export function useBoard(containerSize?: { width: number; height: number }) {
   const redo = useCallback(() => {
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
-    undoStack.current.push(JSON.parse(JSON.stringify(next)));
+    undoStack.current.push(JSON.parse(JSON.stringify(board)));
     setBoard(next);
-    setCanUndo(true);
+    setCanUndo(undoStack.current.length > 0);
     setCanRedo(redoStack.current.length > 0);
     saveBoard(next);
     setSelectedNoteIds([]);
     setSelectedGroupIds([]);
-  }, []);
+  }, [board]);
 
   return {
     board,
