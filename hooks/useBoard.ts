@@ -110,7 +110,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
     undoStack.current.push(JSON.parse(JSON.stringify(state)));
     if (undoStack.current.length > 50) undoStack.current.shift();
     redoStack.current = [];
-    setCanUndo(undoStack.current.length > 1);
+    setCanUndo(undoStack.current.length > 0);
     setCanRedo(false);
   }, []);
 
@@ -226,6 +226,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
 
   const moveNote = useCallback(
     (id: string, x: number, y: number) => {
+      pushHistory(board);
       const newBoard = {
         ...board,
         notes: board.notes.map((n) => (n.id === id ? { ...n, x, y, updatedAt: Date.now() } : n)),
@@ -233,12 +234,13 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       };
       persistState(newBoard);
     },
-    [board, persistState]
+    [board, persistState, pushHistory]
   );
 
   const moveNotes = useCallback(
     (deltas: Map<string, { x: number; y: number }>) => {
       if (deltas.size === 0) return;
+      pushHistory(board);
       const newBoard = {
         ...board,
         notes: board.notes.map((n) => {
@@ -250,11 +252,12 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       };
       persistState(newBoard);
     },
-    [board, persistState]
+    [board, persistState, pushHistory]
   );
 
   const resizeNote = useCallback(
     (id: string, width: number, height: number) => {
+      pushHistory(board);
       const newBoard = {
         ...board,
         notes: board.notes.map((n) =>
@@ -264,7 +267,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       };
       persistState(newBoard);
     },
-    [board, persistState]
+    [board, persistState, pushHistory]
   );
 
   const changeNoteColor = useCallback(
@@ -466,6 +469,8 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       const group = board.groups.find((g) => g.id === id);
       if (!group) return;
 
+      pushHistory(board);
+
       let finalDx = dx;
       let finalDy = dy;
       if (board.settings.snapEnabled) {
@@ -491,7 +496,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       };
       persistState(newBoard);
     },
-    [board, persistState]
+    [board, persistState, pushHistory]
   );
 
   // ── Selection ──────────────────────────────────────────
@@ -642,12 +647,11 @@ export function useBoard(containerSize?: { width: number; height: number }) {
   // ── Undo / Redo ────────────────────────────────────────
 
   const undo = useCallback(() => {
-    if (undoStack.current.length < 2) return;
-    undoStack.current.pop();
+    if (undoStack.current.length === 0) return;
+    const previous = undoStack.current.pop()!;
     redoStack.current.push(JSON.parse(JSON.stringify(board)));
-    const previous = undoStack.current[undoStack.current.length - 1];
     setBoard(previous);
-    setCanUndo(undoStack.current.length > 1);
+    setCanUndo(undoStack.current.length > 0);
     setCanRedo(true);
     saveBoard(previous);
     setSelectedNoteIds([]);

@@ -59,9 +59,10 @@ export function Canvas() {
 
   // Long-press tracking for touch
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressTarget = useRef<string | null>(null);
   const lastTapTime = useRef(0);
-  const tapTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Track whether a canvas touch gesture involved panning (to suppress note creation)
+  const canvasTouchMoved = useRef(false);
 
   // Detect mobile
   useEffect(() => {
@@ -77,7 +78,6 @@ export function Canvas() {
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
-        // Use visualViewport on mobile for accurate height (iOS Safari address bar)
         const vw = window.visualViewport;
         const w = vw ? vw.width : containerRef.current.clientWidth;
         const h = vw ? vw.height : containerRef.current.clientHeight;
@@ -94,7 +94,6 @@ export function Canvas() {
       window.visualViewport.addEventListener("scroll", onResize);
     }
 
-    // Also handle orientation changes
     window.addEventListener("orientationchange", () => {
       setTimeout(updateSize, 100);
     });
@@ -128,6 +127,7 @@ export function Canvas() {
     containerRef,
     defaultColor,
     setDefaultColor: (c: string) => setDefaultColor(c as NoteColor),
+    onNoteAdded: setFocusedNoteId,
   });
 
   // Space key tracking
@@ -179,13 +179,34 @@ export function Canvas() {
     [canvasAPI]
   );
 
-  const onCanvasMouseUp = useCallback(() => {
-    const rect = canvasAPI.selectionRect;
-    canvasAPI.handleCanvasMouseUp();
-    if (rect && rect.width > 4 && rect.height > 4) {
-      boardAPI.selectAllInRect(rect.x, rect.y, rect.width, rect.height);
-    }
-  }, [canvasAPI, boardAPI]);
+  const onCanvasMouseUp = useCallback(
+    (e: React.MouseEvent) => {
+      const rect = canvasAPI.selectionRect;
+      const wasDragging = canvasAPI.getWasDragging();
+      canvasAPI.handleCanvasMouseUp();
+
+      if (rect && rect.width > 4 && rect.height > 4) {
+        boardAPI.selectAllInRect(rect.x, rect.y, rect.width, rect.height);
+      } else if (!wasDragging && !rect && isCanvasTarget(e.target)) {
+        // Single click on empty board — create first note
+        const isEmpty = boardAPI.board.notes.length === 0 && boardAPI.board.groups.length === 0;
+        if (isEmpty) {
+          const world = canvasAPI.screenToWorld(e.clientX, e.clientY);
+          boardAPI.clearSelection();
+          const note = boardAPI.addNote(defaultColor);
+          const snapX = boardAPI.board.settings.snapEnabled
+            ? snapToGrid(world.x - 100, SNAP_GRID_SIZE)
+            : world.x - 100;
+          const snapY = boardAPI.board.settings.snapEnabled
+            ? snapToGrid(world.y - 100, SNAP_GRID_SIZE)
+            : world.y - 100;
+          boardAPI.moveNote(note.id, snapX, snapY);
+          setFocusedNoteId(note.id);
+        }
+      }
+    },
+    [canvasAPI, boardAPI, defaultColor, isCanvasTarget]
+  );
 
   // Double-click empty canvas to add a note
   const onCanvasDoubleClick = useCallback(
@@ -210,33 +231,30 @@ export function Canvas() {
 
   const onCanvasTouchStart = useCallback(
     (e: React.TouchEvent) => {
-      // Check if touch is on a note or group
       const target = e.target as HTMLElement;
       const onElement = target.closest(".note-card, .group-frame");
 
       if (onElement) {
-        // Long-press detection for context menu
+        // Long-press detection is handled by the Note/Group components themselves
         const id = onElement.getAttribute("data-id");
         if (id) {
-          longPressTarget.current = id;
-          if (longPressTimer.current) clearTimeout(longPressTimer.current);
-          longPressTimer.current = setTimeout(() => {
-            // This will be handled by the Note/Group component's own long-press
-          }, 500);
+          longPressTimer.current = null;
         }
         return;
       }
 
       // Touch on empty canvas
       if (e.touches.length === 1) {
-        // Track tap vs drag
         const touch = e.touches[0];
         const now = Date.now();
         const timeSinceLastTap = now - lastTapTime.current;
 
+        // Reset pan tracking for this new gesture
+        canvasTouchMoved.current = false;
+
         if (timeSinceLastTap < 300 && timeSinceLastTap > 0) {
-          // Double tap - add note
-          if (tapTimeout.current) clearTimeout(tapTimeout.current);
+          // Double tap → add note immediately
+          lastTapTime.current = 0;
           const world = canvasAPI.screenToWorld(touch.clientX, touch.clientY);
           boardAPI.clearSelection();
           const note = boardAPI.addNote(defaultColor);
@@ -248,17 +266,11 @@ export function Canvas() {
             : world.y - 70;
           boardAPI.moveNote(note.id, snapX, snapY);
           setFocusedNoteId(note.id);
-          lastTapTime.current = 0;
+          canvasAPI.handleTouchStart(e);
           return;
         }
 
         lastTapTime.current = now;
-
-        // Single tap - add note after short timeout (to differentiate from pan)
-        tapTimeout.current = setTimeout(() => {
-          // Only add note if user didn't pan (check via isDragging ref)
-          // This is handled by checking if the touch moved significantly
-        }, 300);
       }
 
       canvasAPI.handleTouchStart(e);
@@ -266,20 +278,36 @@ export function Canvas() {
     [canvasAPI, boardAPI, defaultColor]
   );
 
+  const onCanvasTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      // Mark as moved if single-finger moved more than 8px
+      if (e.touches.length === 1 && !canvasTouchMoved.current) {
+        canvasTouchMoved.current = canvasAPI.getWasDragging();
+      }
+      canvasAPI.handleTouchMove(e);
+    },
+    [canvasAPI]
+  );
+
   const onCanvasTouchEnd = useCallback(
     (e: React.TouchEvent) => {
-      // Clear long-press timer
       if (longPressTimer.current) {
         clearTimeout(longPressTimer.current);
         longPressTimer.current = null;
       }
 
-      // Detect single tap on empty canvas (no drag)
       const touch = e.changedTouches[0];
-      if (touch && e.touches.length === 0 && canvasAPI.selectionRect === null) {
+      const wasPanning = canvasTouchMoved.current || canvasAPI.getWasDragging();
+
+      // Single-tap on empty canvas: only create note if the gesture did NOT pan
+      if (
+        touch &&
+        e.touches.length === 0 &&
+        canvasAPI.selectionRect === null &&
+        !wasPanning
+      ) {
         const target = e.target as HTMLElement;
         if (!target.closest(".note-card, .group-frame, .context-menu")) {
-          // This was likely a tap (not a pan)
           const world = canvasAPI.screenToWorld(touch.clientX, touch.clientY);
           boardAPI.clearSelection();
           const note = boardAPI.addNote(defaultColor);
@@ -294,6 +322,7 @@ export function Canvas() {
         }
       }
 
+      canvasTouchMoved.current = false;
       canvasAPI.handleTouchEnd(e);
     },
     [canvasAPI, boardAPI, defaultColor]
@@ -353,7 +382,6 @@ export function Canvas() {
             label: "Rename",
             icon: "✏️",
             action: () => {
-              // Trigger rename via event
               window.dispatchEvent(
                 new CustomEvent("group-rename", { detail: { groupId } })
               );
@@ -400,7 +428,6 @@ export function Canvas() {
       let finalX = newX;
       let finalY = newY;
 
-      // Apply snap-to-grid if enabled
       if (boardAPI.board.settings.snapEnabled) {
         finalX = snapToGrid(newX, SNAP_GRID_SIZE);
         finalY = snapToGrid(newY, SNAP_GRID_SIZE);
@@ -472,7 +499,7 @@ export function Canvas() {
           onWheel={canvasAPI.handleWheel}
           onContextMenu={(e) => e.preventDefault()}
           onTouchStart={onCanvasTouchStart}
-          onTouchMove={canvasAPI.handleTouchMove}
+          onTouchMove={onCanvasTouchMove}
           onTouchEnd={onCanvasTouchEnd}
         >
           {/* Transformed canvas content */}
@@ -522,9 +549,7 @@ export function Canvas() {
                 onUpdate={(updates) => boardAPI.updateNote(note.id, updates)}
                 onSelect={(multi) => boardAPI.selectNote(note.id, multi)}
                 onBringToFront={() => boardAPI.bringToFront(note.id)}
-                onDragStart={() => {
-                  boardAPI.bringToFront(note.id);
-                }}
+                onDragStart={() => {}}
                 onDragEnd={(x, y) => handleNoteDragEnd(note.id, x, y)}
                 onResize={(w, h) => handleNoteResize(note.id, w, h)}
                 setIsEditing={keyboardShortcuts.setIsEditing}

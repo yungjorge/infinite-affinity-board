@@ -1,52 +1,50 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { saveSettings, loadSettings } from "@/lib/storage";
+import React, { useEffect, useCallback } from "react";
+import { useBoardContext } from "./Canvas";
+
+function resolveTheme(theme: "light" | "dark" | "system"): "light" | "dark" {
+  if (theme !== "system") return theme;
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<"light" | "dark">(() => {
-    if (typeof window === "undefined") return "light";
-    const stored = loadSettings();
-    if (stored) {
-      if (stored.theme === "system") {
-        return window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
-      }
-      return stored.theme;
-    }
-    return window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-  });
+  const { boardAPI } = useBoardContext();
+  const theme = boardAPI.board.settings.theme;
 
+  // Resolve "system" → explicit value on first render so the board saves a concrete theme
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    if (theme === "system") {
+      const resolved = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      boardAPI.setSettings({ theme: resolved });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Apply dark class whenever theme changes
+  useEffect(() => {
+    const resolved = resolveTheme(theme);
+    document.documentElement.classList.toggle("dark", resolved === "dark");
   }, [theme]);
 
   const toggle = useCallback(() => {
-    setTheme((prev) => {
-      const next = prev === "dark" ? "light" : "dark";
-      const stored = loadSettings();
-      saveSettings({
-        theme: next,
-        snapEnabled: stored?.snapEnabled ?? false,
-      });
-      return next;
-    });
-  }, []);
+    const resolved = resolveTheme(theme);
+    boardAPI.setSettings({ theme: resolved === "dark" ? "light" : "dark" });
+  }, [boardAPI, theme]);
+
+  const resolved = resolveTheme(theme);
 
   return (
     <button
       className="toolbar-btn"
-      title={theme === "dark" ? "Switch to Light" : "Switch to Dark"}
+      title={resolved === "dark" ? "Switch to Light" : "Switch to Dark"}
       aria-label="Toggle theme"
       onClick={toggle}
     >
       <span className="tooltip">
-        {theme === "dark" ? "Light Mode" : "Dark Mode"}
+        {resolved === "dark" ? "Light Mode" : "Dark Mode"}
       </span>
-      {theme === "dark" ? (
+      {resolved === "dark" ? (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
           <path d="M8 1a7 7 0 100 14A7 7 0 008 1zM6 3.07A5 5 0 1012.93 10 5 5 0 016 3.07z" />
         </svg>

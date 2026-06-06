@@ -29,6 +29,8 @@ export interface CanvasControlsAPI {
   selectionRect: { x: number; y: number; width: number; height: number } | null;
   // Whether this is a touch/mobile device
   isTouchDevice: boolean;
+  // Returns true if the last gesture involved dragging (moved > threshold)
+  getWasDragging: () => boolean;
 }
 
 export function useCanvasControls(
@@ -334,5 +336,6 @@ export function useCanvasControls(
     handleTouchEnd,
     selectionRect,
     isTouchDevice,
+    getWasDragging: () => isDragging.current,
   };
 }

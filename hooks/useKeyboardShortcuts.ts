@@ -5,6 +5,7 @@ import { BoardAPI } from "./useBoard";
 import { CanvasControlsAPI } from "./useCanvasControls";
 import { clampZoom } from "@/lib/geometry";
 import { ZOOM_STEP } from "@/lib/constants";
+import { NoteColor } from "@/lib/boardTypes";
 
 interface KeyboardShortcutOptions {
   boardAPI: BoardAPI;
@@ -12,14 +13,22 @@ interface KeyboardShortcutOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
   defaultColor: string;
   setDefaultColor: (color: string) => void;
+  onNoteAdded?: (noteId: string) => void;
 }
 
 export function useKeyboardShortcuts({
   boardAPI,
   canvasAPI,
   containerRef,
+  defaultColor,
+  onNoteAdded,
 }: KeyboardShortcutOptions) {
   const isEditingRef = useRef(false);
+  const defaultColorRef = useRef(defaultColor);
+  const onNoteAddedRef = useRef(onNoteAdded);
+
+  useEffect(() => { defaultColorRef.current = defaultColor; }, [defaultColor]);
+  useEffect(() => { onNoteAddedRef.current = onNoteAdded; }, [onNoteAdded]);
 
   const setIsEditing = useCallback((editing: boolean) => {
     isEditingRef.current = editing;
@@ -44,7 +53,8 @@ export function useKeyboardShortcuts({
         case "n":
           if (!isCtrl) {
             e.preventDefault();
-            boardAPI.addNote();
+            const note = boardAPI.addNote(defaultColorRef.current as NoteColor);
+            onNoteAddedRef.current?.(note.id);
           }
           break;
 
