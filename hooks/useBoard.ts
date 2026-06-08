@@ -88,6 +88,11 @@ export function useBoard(containerSize?: { width: number; height: number }) {
       if (oldSettings.gridEnabled === true && saved.settings.snapEnabled === undefined) {
         saved.settings.snapEnabled = true;
       }
+      // Migrate groups: add locked field if missing (default edit mode)
+      // Cast through unknown to handle old boards that lack the `locked` field at runtime
+      saved.groups = (saved.groups as unknown as (Omit<GroupItem, "locked"> & { locked?: boolean })[]).map(
+        (g) => ({ ...g, locked: g.locked ?? false })
+      ) as GroupItem[];
       return saved;
     }
     return defaultBoardState;
@@ -387,6 +392,7 @@ export function useBoard(containerSize?: { width: number; height: number }) {
         theme: "corkboard",
         noteIds: [...noteIds],
         zIndex: groupZ,
+        locked: false,
         createdAt: now,
         updatedAt: now,
       };

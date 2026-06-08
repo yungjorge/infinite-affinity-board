@@ -133,3 +133,25 @@ export function snapPointToGrid(point: Point, gridSize: number = SNAP_GRID_SIZE)
     y: snapToGrid(point.y, gridSize),
   };
 }
+
+export function stableHash(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+const STABLE_ROTATIONS = [-3, -2, -1, 1, 2, 3];
+
+export function stableRotation(noteId: string): number {
+  return STABLE_ROTATIONS[stableHash(noteId) % STABLE_ROTATIONS.length];
+}
+
+// Returns 0-2 for curl corner variant, -1 for no curl (~33% of notes)
+export function stableCurlVariant(noteId: string): number {
+  const h = stableHash(noteId + "c");
+  if (h % 3 === 0) return -1;
+  return h % 3;
+}

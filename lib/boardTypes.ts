@@ -31,6 +31,7 @@ export type GroupItem = {
   theme: "corkboard" | "markerboard" | "chalkboard";
   noteIds: string[];
   zIndex: number;
+  locked: boolean;
   createdAt: number;
   updatedAt: number;
 };

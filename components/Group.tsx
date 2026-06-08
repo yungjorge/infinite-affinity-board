@@ -280,14 +280,23 @@ export function Group({
     [onContextMenu]
   );
 
+  const handleLockToggle = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onUpdate({ locked: !group.locked });
+    },
+    [group.locked, onUpdate]
+  );
+
   const themeClass = `group-frame-${group.theme}`;
   const titleThemeClass = `group-${group.theme}-title`;
+  const lockedClass = group.locked ? "group-locked" : "";
 
   return (
     <div
       ref={groupRef}
       data-id={group.id}
-      className={`group-frame ${themeClass} ${isSelected ? "selected" : ""}`}
+      className={`group-frame ${themeClass} ${lockedClass} ${isSelected ? "selected" : ""}`}
       style={{
         left: `${group.x}px`,
         top: `${group.y}px`,
@@ -299,27 +308,6 @@ export function Group({
       onContextMenu={handleContextMenu}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Push pin for corkboard theme */}
-      {group.theme === "corkboard" && (
-        <div
-          style={{
-            position: "absolute",
-            top: -10,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 2,
-            pointerEvents: "none",
-          }}
-        >
-          <svg width="18" height="24" viewBox="0 0 18 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <ellipse cx="9" cy="8" rx="7" ry="7" fill="#c0392b" />
-            <ellipse cx="7" cy="6" rx="2.5" ry="2" fill="rgba(255,255,255,0.3)" />
-            <rect x="8" y="13" width="2" height="9" rx="1" fill="#7f8c8d" />
-            <ellipse cx="9" cy="22.5" rx="2.5" ry="1.5" fill="rgba(0,0,0,0.2)" />
-          </svg>
-        </div>
-      )}
-
       {/* Title bar */}
       <div
         className={`group-title-bar ${titleThemeClass}`}
@@ -350,6 +338,26 @@ export function Group({
           <span style={{ fontSize: "10px", opacity: 0.6, userSelect: "none" }}>
             {notes.length} notes
           </span>
+          {/* Lock / Edit toggle */}
+          <button
+            className="group-btn group-lock-btn"
+            onClick={handleLockToggle}
+            title={group.locked ? "Edit group" : "Lock group"}
+            aria-label={group.locked ? "Edit group" : "Lock group"}
+          >
+            {group.locked ? (
+              // Pencil icon when locked (click to edit)
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill="none"/>
+              </svg>
+            ) : (
+              // Lock icon when editable (click to lock)
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="5.5" width="8" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none"/>
+                <path d="M4 5.5V3.5a2 2 0 0 1 4 0v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+              </svg>
+            )}
+          </button>
           <button
             className="group-btn"
             onClick={(e) => {

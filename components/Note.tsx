@@ -4,6 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from "react";
 import { NoteItem } from "@/lib/boardTypes";
 import { ViewportState } from "@/lib/boardTypes";
 import { MIN_NOTE_WIDTH, MIN_NOTE_HEIGHT, MAX_NOTE_WIDTH, MAX_NOTE_HEIGHT } from "@/lib/constants";
+import { stableRotation, stableCurlVariant } from "@/lib/geometry";
 
 interface NoteProps {
   note: NoteItem;
@@ -20,7 +21,10 @@ interface NoteProps {
   autoFocus?: boolean;
   onContextMenu: (screenX: number, screenY: number) => void;
   isMobile: boolean;
+  inLockedGroup?: boolean;
 }
+
+const CURL_CLASSES = ["note-curl-br", "note-curl-bl", "note-curl-br-sm"];
 
 export function Note({
   note,
@@ -37,6 +41,7 @@ export function Note({
   autoFocus,
   onContextMenu,
   isMobile,
+  inLockedGroup = false,
 }: NoteProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -54,6 +59,11 @@ export function Note({
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const hasMoved = useRef(false);
 
+  // Stable decorative values derived from note.id — never change between renders
+  const rotation = stableRotation(note.id);
+  const curlVariant = stableCurlVariant(note.id);
+  const curlClass = curlVariant >= 0 ? CURL_CLASSES[curlVariant] : null;
+
   useEffect(() => {
     setLocalText(note.text);
   }, [note.text]);
@@ -64,12 +74,12 @@ export function Note({
 
   // Auto-focus textarea if this note was just created
   useEffect(() => {
-    if (autoFocus && textareaRef.current) {
+    if (autoFocus && !inLockedGroup && textareaRef.current) {
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 50);
     }
-  }, [autoFocus]);
+  }, [autoFocus, inLockedGroup]);
 
   // Sync local text changes with debounce
   const textTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,6 +116,11 @@ export function Note({
         return;
       }
 
+      // Don't drag individual notes in locked group mode
+      if (inLockedGroup) {
+        return;
+      }
+
       e.stopPropagation();
       e.preventDefault();
       onBringToFront();
@@ -116,18 +131,19 @@ export function Note({
       dragStartPos.current = { x: e.clientX, y: e.clientY };
       noteStartPos.current = { x: note.x, y: note.y };
     },
-    [note.x, note.y, onBringToFront, onDragStart, onSelect]
+    [note.x, note.y, onBringToFront, onDragStart, onSelect, inLockedGroup]
   );
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent) => {
+      if (inLockedGroup) return;
       e.stopPropagation();
       e.preventDefault();
       setIsResizing(true);
       dragStartPos.current = { x: e.clientX, y: e.clientY };
       resizeStart.current = { width: note.width, height: note.height };
     },
-    [note.width, note.height]
+    [note.width, note.height, inLockedGroup]
   );
 
   // ── Touch Drag Handling ───────────────────────────────
@@ -139,6 +155,7 @@ export function Note({
         return;
       }
       if (target.closest(".resize-handle")) {
+        if (inLockedGroup) return;
         e.stopPropagation();
         e.preventDefault();
         const touch = e.touches[0];
@@ -155,8 +172,10 @@ export function Note({
       touchStartPos.current = { x: touch.clientX, y: touch.clientY };
       hasMoved.current = false;
 
-      onBringToFront();
-      onDragStart();
+      if (!inLockedGroup) {
+        onBringToFront();
+        onDragStart();
+      }
 
       // Long-press detection
       if (longPressTimer.current) clearTimeout(longPressTimer.current);
@@ -167,7 +186,7 @@ export function Note({
         }
       }, 600);
     },
-    [note.width, note.height, onBringToFront, onDragStart, onContextMenu]
+    [note.width, note.height, onBringToFront, onDragStart, onContextMenu, inLockedGroup]
   );
 
   const handleTouchMove = useCallback(
@@ -186,7 +205,7 @@ export function Note({
         }
       }
 
-      if (!isDragging && !isResizing && (dx > 3 || dy > 3)) {
+      if (!inLockedGroup && !isDragging && !isResizing && (dx > 3 || dy > 3)) {
         onSelect(false);
         setIsDragging(true);
         dragStartPos.current = { x: touchStartPos.current.x, y: touchStartPos.current.y };
@@ -224,7 +243,7 @@ export function Note({
         }
       }
     },
-    [isDragging, isResizing, viewport.zoom, note.x, note.y, onSelect]
+    [isDragging, isResizing, viewport.zoom, note.x, note.y, onSelect, inLockedGroup]
   );
 
   const handleTouchEnd = useCallback(
@@ -340,16 +359,16 @@ export function Note({
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      if (textareaRef.current) {
+      if (!inLockedGroup && textareaRef.current) {
         textareaRef.current.focus();
       }
     },
-    []
+    [inLockedGroup]
   );
 
   const handleTextareaFocus = useCallback(() => {
-    setIsEditing(true);
-  }, [setIsEditing]);
+    if (!inLockedGroup) setIsEditing(true);
+  }, [setIsEditing, inLockedGroup]);
 
   const handleTextareaBlur = useCallback(() => {
     setIsEditing(false);
@@ -370,6 +389,12 @@ export function Note({
   );
 
   const colorClass = `note-${note.color}`;
+  const lockedGroupClass = inLockedGroup ? "in-locked-group" : "";
+
+  // Rotation applied via inline style — derived from note.id, never random
+  const rotationStyle = inLockedGroup && !isDragging
+    ? { transform: `rotate(${rotation}deg)` }
+    : undefined;
 
   return (
     <div
@@ -377,13 +402,14 @@ export function Note({
       data-id={note.id}
       className={`note-card ${colorClass} ${isSelected ? "selected" : ""} ${
         isDragging ? "dragging" : ""
-      } ${appeared ? "note-appear" : ""}`}
+      } ${appeared ? "note-appear" : ""} ${lockedGroupClass}`}
       style={{
         left: `${note.x}px`,
         top: `${note.y}px`,
         width: `${note.width}px`,
         height: `${note.height}px`,
         zIndex: isDragging ? 9999 : note.zIndex,
+        ...rotationStyle,
       }}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
@@ -393,6 +419,18 @@ export function Note({
       onTouchEnd={handleTouchEnd}
       onClick={(e) => e.stopPropagation()}
     >
+      {/* Per-note push pin — only in locked group mode */}
+      {inLockedGroup && (
+        <div className="note-pin" aria-hidden="true">
+          <svg width="14" height="20" viewBox="0 0 14 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="7" cy="6" rx="5.5" ry="5.5" fill="#c0392b" />
+            <ellipse cx="5.5" cy="4.5" rx="2" ry="1.5" fill="rgba(255,255,255,0.32)" />
+            <rect x="6.2" y="10.5" width="1.6" height="7.5" rx="0.8" fill="#7f8c8d" />
+            <ellipse cx="7" cy="18.5" rx="2" ry="1.2" fill="rgba(0,0,0,0.18)" />
+          </svg>
+        </div>
+      )}
+
       <textarea
         ref={textareaRef}
         value={localText}
@@ -401,8 +439,18 @@ export function Note({
         onBlur={handleTextareaBlur}
         className="note-textarea"
         placeholder="Type here..."
-        style={{ fontSize: isMobile ? "13px" : "14px" }}
+        readOnly={inLockedGroup}
+        style={{
+          fontSize: isMobile ? "13px" : "14px",
+          cursor: inLockedGroup ? "default" : "text",
+        }}
       />
+
+      {/* Curl corner decoration — only in locked group mode */}
+      {inLockedGroup && curlClass && (
+        <div className={`note-curl ${curlClass}`} aria-hidden="true" />
+      )}
+
       <div
         className="resize-handle"
         onMouseDown={handleResizeStart}

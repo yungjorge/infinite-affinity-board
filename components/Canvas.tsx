@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useRef,
   useEffect,
+  useMemo,
   createContext,
   useContext,
 } from "react";
@@ -434,6 +435,15 @@ export function Canvas() {
   const sortedGroups = [...board.groups].sort((a, b) => a.zIndex - b.zIndex);
   const sortedNotes = [...board.notes].sort((a, b) => a.zIndex - b.zIndex);
 
+  // Set of group IDs that are currently locked
+  const lockedGroupIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of board.groups) {
+      if (g.locked) set.add(g.id);
+    }
+    return set;
+  }, [board.groups]);
+
   // Get notes for a group
   const getGroupNotes = (group: GroupItem) =>
     board.notes.filter((n) => group.noteIds.includes(n.id));
@@ -574,6 +584,7 @@ export function Canvas() {
                   showNoteContextMenu(note.id, screenX, screenY)
                 }
                 isMobile={isMobile}
+                inLockedGroup={note.groupId ? lockedGroupIds.has(note.groupId) : false}
               />
             ))}
 
